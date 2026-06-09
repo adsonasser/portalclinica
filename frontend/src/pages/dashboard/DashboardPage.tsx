@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { dashboardApi } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
@@ -46,13 +44,6 @@ export function DashboardPage() {
 
   return (
     <div style={{ padding: '24px 28px', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Greeting row */}
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 14, color: '#71717A' }}>
-          {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })} · Olá, {user?.name?.split(' ')[0]}
-        </p>
-      </div>
-
       {/* KPI Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14, marginBottom: 20 }}>
         {kpiCards.map((k, i) => (
