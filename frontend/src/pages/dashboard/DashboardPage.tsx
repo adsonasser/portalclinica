@@ -47,20 +47,10 @@ export function DashboardPage() {
   return (
     <div style={{ padding: '24px 28px', fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Greeting row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <p style={{ fontSize: 14, color: '#71717A' }}>
-            {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })} · Olá, {user?.name?.split(' ')[0]}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ height: 36, padding: '0 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#18181B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <i className="ti ti-download" style={{ fontSize: 14 }} /> Exportar
-          </button>
-          <button style={{ height: 36, padding: '0 16px', background: '#000000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo agendamento
-          </button>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 14, color: '#71717A' }}>
+          {format(new Date(), "EEEE, dd 'de' MMMM", { locale: ptBR })} · Olá, {user?.name?.split(' ')[0]}
+        </p>
       </div>
 
       {/* KPI Grid */}
@@ -139,7 +129,7 @@ export function DashboardPage() {
             <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#71717A', marginBottom: 6 }}>Atenção agora</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#09090B', marginBottom: 2 }}>Agenda de hoje</div>
             <div style={{ fontSize: 12, color: '#71717A', marginBottom: 12 }}>{kpis.agendamentosHoje || 0} agendamentos programados para hoje</div>
-            <button style={{ width: '100%', height: 34, background: '#000000', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
+            <button onClick={() => navigate('/agenda')} style={{ width: '100%', height: 34, background: '#000000', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
               Ver agenda completa
             </button>
           </div>
