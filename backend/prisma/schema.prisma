@@ -1,0 +1,966 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  PROFESSIONAL
+  RECEPTIONIST
+}
+
+enum AppointmentStatusType {
+  CONFIRMADO
+  AGUARDANDO
+  ATENCAO
+  RETORNO
+  AVALIACAO
+  ENCAIXE
+  CANCELADO
+  FALTOU
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum SaleStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum LeadStatus {
+  NOVO
+  CONTATADO
+  QUALIFICADO
+  PROPOSTA
+  NEGOCIACAO
+  GANHO
+  PERDIDO
+}
+
+enum LeadTemperature {
+  QUENTE
+  MORNO
+  FRIO
+}
+
+enum TaskStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+enum TaskPriority {
+  BAIXA
+  MEDIA
+  ALTA
+  URGENTE
+}
+
+enum StockMovementType {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  TRANSFERENCIA
+  CONSUMO
+}
+
+enum CostType {
+  FIXED
+  PERCENT
+}
+
+enum PatientStatus {
+  ATIVO
+  INATIVO
+  EM_TRATAMENTO
+  SEM_RETORNO
+  EM_RISCO
+  NOVO
+}
+
+enum ContactType {
+  PACIENTE
+  LEAD
+  RESPONSAVEL
+  ACOMPANHANTE
+  OUTROS
+}
+
+enum MessageChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+  INTERNO
+}
+
+enum MessageStatus {
+  ENVIADO
+  ENTREGUE
+  LIDO
+  FALHOU
+}
+
+enum OpportunityStatus {
+  ABERTA
+  EM_NEGOCIACAO
+  GANHA
+  PERDIDA
+  SUSPENSA
+}
+
+enum ClinicStatus {
+  ATIVA
+  IMPLANTACAO
+  TESTE
+  SUSPENSA
+  BLOQUEADA
+  CANCELADA
+  INADIMPLENTE
+}
+
+enum TenantSubStatus {
+  ATIVA
+  TESTE
+  VENCIDA
+  INADIMPLENTE
+  SUSPENSA
+  CANCELADA
+}
+
+// ─── MODELS ───────────────────────────────────────────────────────────────────
+
+model Clinic {
+  id          String        @id @default(cuid())
+  name        String
+  slug        String        @unique
+  cnpj        String?
+  phone       String?
+  email       String?
+  address     String?
+  logoUrl     String?
+  active      Boolean       @default(true)
+  status      ClinicStatus  @default(ATIVA)
+  responsavel String?
+  cidade      String?
+  estado      String?
+  dominio     String?
+  observacoes String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  users           User[]
+  accessProfiles  AccessProfile[]
+  patients        Patient[]
+  plans           Plan[]
+  sessions        Session[]
+  appointments    Appointment[]
+  professionals   Professional[]
+  leads           Lead[]
+  tasks           Task[]
+  messages        Message[]
+  transactions    FinancialTransaction[]
+  categories      FinancialCategory[]
+  paymentMethods  PaymentMethod[]
+  sales           Sale[]
+  products        Product[]
+  productCategories ProductCategory[]
+  suppliers       Supplier[]
+  stockMovements  StockMovement[]
+  templates         Template[]
+  opportunities     Opportunity[]
+  files             ClinicFile[]
+  settings          ClinicSettings?
+  documentTemplates DocumentTemplate[]
+  patientDocuments  PatientDocument[]
+  subscription      TenantSubscription?
+  auditLogs         AuditLog[]
+
+  @@map("clinics")
+}
+
+model ClinicSettings {
+  id                  String  @id @default(cuid())
+  clinicId            String  @unique
+  workStartTime       String  @default("08:00")
+  workEndTime         String  @default("18:00")
+  slotDuration        Int     @default(30)
+  workDays            Int[]   @default([1, 2, 3, 4, 5])
+  appointmentReminder Boolean @default(true)
+  reminderHours       Int     @default(24)
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("clinic_settings")
+}
+
+model AccessProfile {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  active      Boolean  @default(true)
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  users  User[]
+
+  @@map("access_profiles")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  clinicId          String
+  name              String
+  email             String
+  password          String
+  role              UserRole @default(RECEPTIONIST)
+  avatarUrl         String?
+  phone             String?
+  active            Boolean  @default(true)
+  accessProfileId   String?
+  lastLoginAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  accessProfile AccessProfile?  @relation(fields: [accessProfileId], references: [id])
+  professional  Professional?
+  tasks         Task[]          @relation("TaskAssignee")
+  messages      Message[]
+
+  @@unique([clinicId, email])
+  @@map("users")
+}
+
+model Professional {
+  id           String  @id @default(cuid())
+  clinicId     String
+  userId       String  @unique
+  specialty    String?
+  register     String?
+  color        String  @default("#535845")
+  active       Boolean @default(true)
+  showInAgenda Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  sessions     Session[]
+
+  @@map("professionals")
+}
+
+model Patient {
+  id              String        @id @default(cuid())
+  clinicId        String
+  name            String
+  email           String?
+  phone           String?
+  phoneSecondary  String?
+  cpf             String?
+  rg              String?
+  birthDate       DateTime?
+  gender          String?
+  profession      String?
+  instagram       String?
+  canalPreferencial String?
+  melhorHorario   String?
+  address         String?
+  addressStreet   String?
+  addressNumber   String?
+  addressComplement String?
+  addressNeighborhood String?
+  city            String?
+  state           String?
+  zipCode         String?
+  status          PatientStatus @default(NOVO)
+  contactType     ContactType   @default(PACIENTE)
+  source          String?
+  responsible     String?
+  comoConheceu    String?
+  indicadoPor     String?
+  obsOrigem       String?
+  responsavelCadastro String?
+  notes           String?
+  alergias        String?
+  medicamentos    String?
+  comorbidades    String?
+  objetivo        String?
+  obsImportantes  String?
+  atencaoEspecial String?
+  restricoes      String?
+  pacienteVip     Boolean       @default(false)
+  alertaInterno   String?
+  queixaPrincipal String?
+  statusTratamento String?
+  obsGerais       String?
+  obsInterna      String?
+  avatarUrl       String?
+  portalPassword  String?
+  portalActive    Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  clinic          Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  sessions        Session[]
+  appointments    Appointment[]
+  leads           Lead[]
+  sales           Sale[]
+  messages        Message[]
+  patientNotes    PatientNote[]
+  evolutionNotes  EvolutionNote[]
+  prescriptions   Prescription[]
+  anamneses       Anamnesis[]
+  files           ClinicFile[]
+  opportunities   Opportunity[]
+  documents       PatientDocument[]
+
+  @@unique([clinicId, cpf])
+  @@map("patients")
+}
+
+model Plan {
+  id                  String    @id @default(cuid())
+  clinicId            String
+  name                String
+  description         String?
+  price               Float     @default(0)
+  duration            Int       @default(60)
+  sessionsTotal       Int       @default(1)
+  color               String    @default("#535845")
+  active              Boolean   @default(true)
+  defaultCategoryId   String?
+  costType            CostType  @default(FIXED)
+  costValue           Float     @default(0)
+  categoria           String?
+  tipo                String?
+  tipoGeracaoSessoes  String    @default("nao_gera")
+  quantidadeSessoes   Int       @default(0)
+  composicaoSessoes   Json?
+  duracaoPadrao       Int?
+  profissionalPadrao  String?
+  salaPadrao          String?
+  validadeDias        Int?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  clinic              Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  defaultCategory     FinancialCategory?   @relation(fields: [defaultCategoryId], references: [id])
+  sessions            Session[]
+  appointments        Appointment[]
+  procedureProducts   ProcedureProduct[]
+  saleItems           SaleItem[]
+
+  @@map("plans")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  clinicId       String
+  patientId      String
+  planId         String?
+  professionalId String?
+  saleId         String?
+  sessionNumber  Int      @default(1)
+  sessionStatus  String   @default("A_AGENDAR")
+  date           DateTime
+  notes          String?
+  observations   String?
+  attended       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  plan         Plan?         @relation(fields: [planId], references: [id])
+  professional Professional? @relation(fields: [professionalId], references: [id])
+  sale         Sale?         @relation(fields: [saleId], references: [id])
+
+  @@map("sessions")
+}
+
+model Appointment {
+  id             String                @id @default(cuid())
+  clinicId       String
+  patientId      String
+  planId         String?
+  professionalId String?
+  startTime      DateTime
+  endTime        DateTime
+  status         AppointmentStatusType @default(AGUARDANDO)
+  notes          String?
+  isReturn       Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  plan         Plan?         @relation(fields: [planId], references: [id])
+  professional Professional? @relation(fields: [professionalId], references: [id])
+
+  @@map("appointments")
+}
+
+model EvolutionNote {
+  id        String   @id @default(cuid())
+  clinicId  String
+  patientId String
+  content   String
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("evolution_notes")
+}
+
+model Prescription {
+  id        String   @id @default(cuid())
+  clinicId  String
+  patientId String
+  content   String
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("prescriptions")
+}
+
+model Anamnesis {
+  id        String   @id @default(cuid())
+  clinicId  String
+  patientId String
+  answers   Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("anamneses")
+}
+
+model PatientNote {
+  id        String   @id @default(cuid())
+  clinicId  String
+  patientId String
+  content   String
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("patient_notes")
+}
+
+model Lead {
+  id          String          @id @default(cuid())
+  clinicId    String
+  name        String
+  email       String?
+  phone       String?
+  source      String?
+  status      LeadStatus      @default(NOVO)
+  temperature LeadTemperature @default(FRIO)
+  patientId   String?
+  funnelId    String?
+  stageId     String?
+  stageOrder  Int             @default(0)
+  value       Float?
+  notes       String?
+  lostReason  String?
+  wonAt       DateTime?
+  lostAt      DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  clinic   Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient  Patient?       @relation(fields: [patientId], references: [id])
+  funnel   Funnel?        @relation(fields: [funnelId], references: [id])
+  stage    FunnelStage?   @relation(fields: [stageId], references: [id])
+  tasks    Task[]
+  messages Message[]
+  activities LeadActivity[]
+
+  @@map("leads")
+}
+
+model Funnel {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stages FunnelStage[]
+  leads  Lead[]
+
+  @@map("funnels")
+}
+
+model FunnelStage {
+  id       String @id @default(cuid())
+  funnelId String
+  name     String
+  order    Int    @default(0)
+  color    String @default("#E5E7EB")
+
+  funnel Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@map("funnel_stages")
+}
+
+model LeadActivity {
+  id        String   @id @default(cuid())
+  leadId    String
+  type      String
+  content   String
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_activities")
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  clinicId    String
+  title       String
+  description String?
+  status      TaskStatus   @default(PENDENTE)
+  priority    TaskPriority @default(MEDIA)
+  assigneeId  String?
+  patientId   String?
+  leadId      String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  clinic   Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  assignee User?   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  lead     Lead?   @relation(fields: [leadId], references: [id])
+
+  @@map("tasks")
+}
+
+model Message {
+  id          String        @id @default(cuid())
+  clinicId    String
+  userId      String?
+  patientId   String?
+  leadId      String?
+  channel     MessageChannel @default(WHATSAPP)
+  status      MessageStatus  @default(ENVIADO)
+  subject     String?
+  content     String
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  clinic  Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id])
+  patient Patient? @relation(fields: [patientId], references: [id])
+  lead    Lead?    @relation(fields: [leadId], references: [id])
+
+  @@map("messages")
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  channel   MessageChannel @default(WHATSAPP)
+  subject   String?
+  content   String
+  variables Json     @default("[]")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("templates")
+}
+
+model Opportunity {
+  id          String            @id @default(cuid())
+  clinicId    String
+  patientId   String?
+  title       String
+  description String?
+  value       Float?
+  status      OpportunityStatus @default(ABERTA)
+  expectedAt  DateTime?
+  wonAt       DateTime?
+  lostAt      DateTime?
+  lostReason  String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  clinic  Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("opportunities")
+}
+
+model FinancialCategory {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  type      TransactionType
+  parentId  String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic       Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  parent       FinancialCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     FinancialCategory[]  @relation("CategoryHierarchy")
+  transactions FinancialTransaction[]
+  plans        Plan[]
+
+  @@map("financial_categories")
+}
+
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  clinic       Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+  sales        Sale[]
+
+  @@map("payment_methods")
+}
+
+model FinancialTransaction {
+  id              String            @id @default(cuid())
+  clinicId        String
+  categoryId      String?
+  paymentMethodId String?
+  saleId          String?
+  type            TransactionType
+  status          TransactionStatus @default(PENDING)
+  description     String
+  amount          Float
+  dueDate         DateTime?
+  paidAt          DateTime?
+  notes               String?
+  contactName         String?
+  statusConferencia   String    @default("PENDENTE")
+  dataConferencia     DateTime?
+  usuarioConferencia  String?
+  motivoDivergencia   String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  clinic        Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  category      FinancialCategory? @relation(fields: [categoryId], references: [id])
+  paymentMethod PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
+  sale          Sale?              @relation(fields: [saleId], references: [id])
+
+  @@map("financial_transactions")
+}
+
+model Sale {
+  id              String     @id @default(cuid())
+  clinicId        String
+  patientId       String?
+  paymentMethodId String?
+  status          SaleStatus @default(PENDING)
+  saleType        String     @default("VENDA")
+  total           Float      @default(0)
+  discount        Float      @default(0)
+  paidAmount      Float      @default(0)
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  clinic        Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient       Patient?             @relation(fields: [patientId], references: [id])
+  paymentMethod PaymentMethod?       @relation(fields: [paymentMethodId], references: [id])
+  items         SaleItem[]
+  transactions  FinancialTransaction[]
+  sessions      Session[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  planId    String?
+  productId String?
+  name      String
+  quantity  Int     @default(1)
+  unitPrice Float
+  discount  Float   @default(0)
+  total     Float
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  plan    Plan?    @relation(fields: [planId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@map("sale_items")
+}
+
+model ProductCategory {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  clinic   Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@map("product_categories")
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  cnpj      String?
+  phone     String?
+  email     String?
+  contact   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic   Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@map("suppliers")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  clinicId    String
+  categoryId  String?
+  supplierId  String?
+  name        String
+  description String?
+  sku         String?
+  unit        String   @default("un")
+  costPrice   Float    @default(0)
+  salePrice   Float    @default(0)
+  stock       Float    @default(0)
+  minStock    Float    @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic             Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  category           ProductCategory?   @relation(fields: [categoryId], references: [id])
+  supplier           Supplier?          @relation(fields: [supplierId], references: [id])
+  stockMovements     StockMovement[]
+  procedureProducts  ProcedureProduct[]
+  saleItems          SaleItem[]
+  kitItems           ProductKitItem[]
+
+  @@map("products")
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  clinicId    String
+  productId   String
+  type        StockMovementType
+  quantity    Float
+  unitCost    Float?
+  reason      String?
+  reference   String?
+  createdAt   DateTime          @default(now())
+
+  clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("stock_movements")
+}
+
+model ProcedureProduct {
+  id        String @id @default(cuid())
+  planId    String
+  productId String
+  quantity  Float  @default(1)
+
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([planId, productId])
+  @@map("procedure_products")
+}
+
+model ProductKit {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  items ProductKitItem[]
+
+  @@map("product_kits")
+}
+
+model ProductKitItem {
+  id       String @id @default(cuid())
+  kitId    String
+  productId String
+  quantity Float  @default(1)
+
+  kit     ProductKit @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  product Product    @relation(fields: [productId], references: [id])
+
+  @@unique([kitId, productId])
+  @@map("product_kit_items")
+}
+
+model ClinicFile {
+  id          String   @id @default(cuid())
+  clinicId    String
+  patientId   String?
+  name        String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  createdAt   DateTime @default(now())
+
+  clinic  Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient Patient? @relation(fields: [patientId], references: [id])
+
+  @@map("clinic_files")
+}
+
+model DocumentTemplate {
+  id                String   @id @default(cuid())
+  clinicId          String
+  name              String
+  type              String
+  description       String?
+  content           String
+  active            Boolean  @default(true)
+  showInProntuario  Boolean  @default(true)
+  generatePdf       Boolean  @default(false)
+  requiresSignature Boolean  @default(false)
+  behavior          String   @default("pdf")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  clinic    Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  documents PatientDocument[]
+
+  @@map("document_templates")
+}
+
+model PatientDocument {
+  id           String   @id @default(cuid())
+  clinicId     String
+  patientId    String
+  templateId   String?
+  name         String
+  type         String
+  content      String
+  professional String?
+  createdAt    DateTime @default(now())
+
+  clinic   Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient  Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  template DocumentTemplate? @relation(fields: [templateId], references: [id])
+
+  @@map("patient_documents")
+}
+
+// ─── GERENCIAL / SAAS MODELS ──────────────────────────────────────────────────
+
+model PricingPlan {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  price         Float    @default(0)
+  billingCycle  String   @default("MONTHLY")
+  maxUsers      Int      @default(5)
+  maxStorage    Int      @default(1024)
+  features      String[] @default([])
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subscriptions TenantSubscription[]
+
+  @@map("pricing_plans")
+}
+
+model TenantSubscription {
+  id              String          @id @default(cuid())
+  clinicId        String          @unique
+  planId          String?
+  status          TenantSubStatus @default(TESTE)
+  startDate       DateTime        @default(now())
+  endDate         DateTime?
+  nextBillingDate DateTime?
+  price           Float?
+  billingCycle    String          @default("MONTHLY")
+  paymentStatus   String          @default("PENDING")
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  clinic PricingPlan? @relation(fields: [planId], references: [id])
+  tenant Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_subscriptions")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  clinicId  String?
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  clinic Clinic? @relation(fields: [clinicId], references: [id])
+
+  @@map("audit_logs")
+}

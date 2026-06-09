@@ -1,0 +1,86 @@
+/* ─── Portal Clínica — Black Minimal Design System ──────────────────────── */
+
+:root {
+  /* ── Paleta base ─────────────────────────────── */
+  --bg-primary:    #000000;   /* ações primárias, ênfase máxima */
+  --bg-surface:    #FFFFFF;   /* cards, painéis */
+  --bg-background: #FAFAFA;   /* canvas da aplicação */
+  --bg-table-head: #F4F4F5;   /* cabeçalho de tabelas */
+  --bg-row-hover:  #F9F9F9;   /* hover de linhas */
+
+  /* ── Menu lateral (preto) ────────────────────── */
+  --menu-bg:             #0A0A0A;
+  --menu-border:         #1A1A1A;
+  --menu-icon:           #71717A;
+  --menu-icon-active:    #FFFFFF;
+  --menu-item-active-bg: rgba(255,255,255,.08);
+  --menu-text:           #FAFAFA;
+  --menu-text-muted:     #71717A;
+
+  /* ── Texto (zinc scale) ──────────────────────── */
+  --text-primary:   #09090B;   /* zinc-950 */
+  --text-body:      #18181B;   /* zinc-900 */
+  --text-secondary: #71717A;   /* zinc-500 */
+  --text-disabled:  #A1A1AA;   /* zinc-400 */
+
+  /* ── Bordas ──────────────────────────────────── */
+  --color-border:        #E4E4E7;   /* zinc-200 */
+  --color-border-strong: #D4D4D8;   /* zinc-300 */
+
+  /* ── Botões ──────────────────────────────────── */
+  --btn-primary-bg:      #000000;
+  --btn-primary-text:    #FFFFFF;
+  --btn-primary-hover:   #18181B;
+  --btn-secondary-bg:    #FFFFFF;
+  --btn-secondary-border:#000000;
+  --btn-secondary-text:  #000000;
+  --btn-danger-bg:       #EF4444;
+  --btn-danger-text:     #FFFFFF;
+
+  /* ── Status semânticos ───────────────────────── */
+  --success-text: #16A34A;  --success-bg: #F0FDF4;
+  --warning-text: #2563EB;  --warning-bg: #EFF6FF;
+  --danger-text:  #DC2626;  --danger-bg:  #FEF2F2;
+  --info-text:    #2563EB;  --info-bg:    #EFF6FF;
+  --muted-text:   #71717A;  --muted-bg:   #F4F4F5;
+  --active-text:  #16A34A;  --active-bg:  #DCFCE7;
+  --pending-text: #71717A;  --pending-bg: #F4F4F5;
+
+  /* ── Tipografia ──────────────────────────────── */
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-body);
+}
+
+#root {
+  display: flex;
+  width: 100%;
+}
+
+/* Reset */
+button { cursor: pointer; font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+a { text-decoration: none; color: inherit; }
+h1, h2, h3, h4, h5, h6, p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }

@@ -1,0 +1,45 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { PatientsModule } from './patients/patients.module';
+import { PlansModule } from './plans/plans.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { AgendaModule } from './agenda/agenda.module';
+import { LeadsModule } from './leads/leads.module';
+import { TasksModule } from './tasks/tasks.module';
+import { MessagesModule } from './messages/messages.module';
+import { FinancialModule } from './financial/financial.module';
+import { SalesModule } from './sales/sales.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { ProntuarioModule } from './prontuario/prontuario.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { OpportunitiesModule } from './opportunities/opportunities.module';
+import { AdminModule } from './admin/admin.module';
+import { AccessProfilesModule } from './access-profiles/access-profiles.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    PatientsModule,
+    PlansModule,
+    SessionsModule,
+    AgendaModule,
+    LeadsModule,
+    TasksModule,
+    MessagesModule,
+    FinancialModule,
+    SalesModule,
+    InventoryModule,
+    ProntuarioModule,
+    DashboardModule,
+    OpportunitiesModule,
+    AdminModule,
+    AccessProfilesModule,
+  ],
+})
+export class AppModule {}
