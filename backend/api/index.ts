@@ -1,9 +1,11 @@
-let cachedApp;
-let initError;
+import { createApp } from '../src/main';
+import type { Request, Response } from 'express';
+
+let cachedApp: any;
+let initError: any;
 
 async function init() {
   try {
-    const { createApp } = require('../dist/main');
     cachedApp = await createApp();
   } catch (e) {
     initError = e;
@@ -13,7 +15,7 @@ async function init() {
 
 const initPromise = init();
 
-module.exports = async (req, res) => {
+export default async function handler(req: Request, res: Response) {
   await initPromise;
   if (initError) {
     return res.status(500).json({
@@ -23,4 +25,4 @@ module.exports = async (req, res) => {
     });
   }
   cachedApp.getHttpAdapter().getInstance()(req, res);
-};
+}
