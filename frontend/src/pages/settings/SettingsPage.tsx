@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { prontuarioApi, financialApi, usersApi, accessProfilesApi } from '../../services/api';
+import { useSearchParams } from 'react-router-dom';
+import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi } from '../../services/api';
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
 
@@ -15,7 +16,9 @@ const NAV_ITEMS = [
   { key: 'procedures',      label: 'Procedimentos e Serviços', icon: 'ti-clipboard-text' },
   { key: 'sessions',        label: 'Sessões',                  icon: 'ti-activity' },
   { key: 'financial',       label: 'Financeiro',               icon: 'ti-cash' },
+  { key: 'contracts',       label: 'Contratos',                icon: 'ti-file-certificate' },
   { key: 'personalization', label: 'Personalização',           icon: 'ti-palette' },
+  { key: 'integrations',   label: 'Integrações',               icon: 'ti-plug-connected' },
 ];
 
 // ─── Module Status ────────────────────────────────────────────────────────────
@@ -29,9 +32,10 @@ const MODULE_STATUS: ModInfo[] = [
   { key: 'contatos',        label: 'Contatos',                 icon: 'ti-heart-handshake',   color: '#16A34A', bg: '#DCFCE7', status: 'configurado',     detail: 'Tipos configurados',                    pending: [],                                     lastUpdate: '02/06/2026' },
   { key: 'prontuario',      label: 'Prontuário',               icon: 'ti-clipboard-list',    color: '#0D9488', bg: '#F0FDFA', status: 'parcial',         detail: 'Modelos de evolução criados',           pending: ['Receituário'],                         lastUpdate: '03/06/2026' },
   { key: 'procedures',      label: 'Procedimentos e Serviços', icon: 'ti-clipboard-text',    color: '#C2410C', bg: '#FFF7ED', status: 'pendente',        detail: '0 procedimentos cadastrados',           pending: ['Procedimentos', 'Categorias'],         lastUpdate: '—' },
-  { key: 'sessions',        label: 'Sessões',                  icon: 'ti-activity',          color: '#0284C7', bg: '#F0F9FF', status: 'nao_configurado', detail: 'Módulo não configurado',                pending: [],                                     lastUpdate: '—' },
-  { key: 'financial',       label: 'Financeiro',               icon: 'ti-cash',              color: '#A16207', bg: '#FEFCE8', status: 'parcial',         detail: 'Contas DRE configuradas',               pending: ['Formas de pagamento'],                 lastUpdate: '05/06/2026' },
-  { key: 'personalization', label: 'Personalização',           icon: 'ti-palette',           color: '#BE185D', bg: '#FDF2F8', status: 'pendente',        detail: 'Configuração não iniciada',             pending: ['Logo', 'Cores'],                      lastUpdate: '—' },
+  { key: 'sessions',        label: 'Sessões',                  icon: 'ti-activity',             color: '#0284C7', bg: '#F0F9FF', status: 'nao_configurado', detail: 'Módulo não configurado',                pending: [],                                     lastUpdate: '—' },
+  { key: 'financial',       label: 'Financeiro',               icon: 'ti-cash',                 color: '#A16207', bg: '#FEFCE8', status: 'parcial',         detail: 'Contas DRE configuradas',               pending: ['Formas de pagamento'],                 lastUpdate: '05/06/2026' },
+  { key: 'contracts',       label: 'Contratos',                icon: 'ti-file-certificate',     color: '#7C3AED', bg: '#F5F3FF', status: 'nao_configurado', detail: 'Nenhum modelo cadastrado',              pending: ['Modelos de contrato'],                 lastUpdate: '—' },
+  { key: 'personalization', label: 'Personalização',           icon: 'ti-palette',              color: '#BE185D', bg: '#FDF2F8', status: 'pendente',        detail: 'Configuração não iniciada',             pending: ['Logo', 'Cores'],                      lastUpdate: '—' },
 ];
 
 const STATUS_CFG: Record<ModStatus, { bg: string; color: string; label: string; icon: string }> = {
@@ -54,6 +58,7 @@ const MODULE_DETAIL: Record<string, { icon: string; label: string; desc: string;
     { icon: 'ti-shield',       label: 'Perfis de acesso',          desc: 'Permissões e níveis de acesso por perfil',            subKey: 'users-profiles' },
   ],
   agenda: [
+    { icon: 'ti-stethoscope',  label: 'Tipos de atendimento',      desc: 'Tipos de consulta com duração padrão para a agenda',  subKey: 'agenda-types' },
     { icon: 'ti-circle-dot',   label: 'Status da agenda',          desc: 'Configure e personalize os status de agendamentos',   subKey: 'agenda-status' },
     { icon: 'ti-calendar-event', label: 'Feriados nacionais',      desc: 'Calendário de feriados e pontos facultativos',        subKey: 'agenda-holidays' },
   ],
@@ -69,6 +74,9 @@ const MODULE_DETAIL: Record<string, { icon: string; label: string; desc: string;
     { icon: 'ti-building-bank', label: 'Contas financeiras / DRE', desc: 'Plano de contas para receitas e despesas no DRE',    subKey: 'dre-contas' },
     { icon: 'ti-credit-card',  label: 'Formas de pagamento',       desc: 'Dinheiro, cartão, PIX, convênio e outros',           subKey: 'payment-methods' },
     { icon: 'ti-receipt',      label: 'Modelos de recibo',         desc: 'Templates de recibo para transações financeiras',    subKey: 'receipt-models' },
+  ],
+  contracts: [
+    { icon: 'ti-file-certificate', label: 'Modelos de contrato', desc: 'Crie e gerencie modelos de contrato para procedimentos e serviços', subKey: 'contract-templates' },
   ],
 };
 
@@ -1240,6 +1248,295 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   );
 }
 
+// ─── Agenda: Tipos de Atendimento ────────────────────────────────────────────
+
+const APPT_TYPE_COLORS = [
+  { label: 'Azul',        value: '#2563EB' },
+  { label: 'Verde',       value: '#16A34A' },
+  { label: 'Roxo',        value: '#7C3AED' },
+  { label: 'Laranja',     value: '#EA580C' },
+  { label: 'Rosa',        value: '#DB2777' },
+  { label: 'Ciano',       value: '#0891B2' },
+  { label: 'Verde-limão', value: '#65A30D' },
+  { label: 'Âmbar',       value: '#D97706' },
+  { label: 'Vermelho',    value: '#DC2626' },
+  { label: 'Cinza',       value: '#6B7280' },
+];
+
+function AppointmentTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
+  const queryClient = useQueryClient();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing]       = useState<any | null>(null);
+  const [drawerErr, setDrawerErr]   = useState('');
+  const [delConfirm, setDelConfirm] = useState<string | null>(null);
+
+  // form fields
+  const [fName, setFName]         = useState('');
+  const [fDesc, setFDesc]         = useState('');
+  const [fDuration, setFDuration] = useState(60);
+  const [fColor, setFColor]       = useState('#2563EB');
+  const [fActive, setFActive]     = useState(true);
+  const [fOrder, setFOrder]       = useState(0);
+  const [fNotes, setFNotes]       = useState('');
+
+  const { data: typesRaw, isLoading } = useQuery({
+    queryKey: ['appointment-types'],
+    queryFn:  () => appointmentTypesApi.list(),
+    staleTime: 30_000,
+  });
+  const types: any[] = (typesRaw as any[]) || [];
+
+  const createMut = useMutation({
+    mutationFn: (data: any) => appointmentTypesApi.create(data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointment-types'] }); closeDrawer(); },
+    onError: (e: any) => setDrawerErr(e?.response?.data?.message || 'Erro ao salvar.'),
+  });
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: any) => appointmentTypesApi.update(id, data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointment-types'] }); closeDrawer(); },
+    onError: (e: any) => setDrawerErr(e?.response?.data?.message || 'Erro ao salvar.'),
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => appointmentTypesApi.remove(id),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['appointment-types'] }); setDelConfirm(null); },
+    onError: (e: any) => alert(e?.response?.data?.message || 'Erro ao excluir. Verifique se o tipo está em uso.'),
+  });
+
+  function openNew() {
+    setEditing(null);
+    setFName(''); setFDesc(''); setFDuration(60); setFColor('#2563EB');
+    setFActive(true); setFOrder(types.length); setFNotes('');
+    setDrawerErr(''); setDrawerOpen(true);
+  }
+  function openEdit(t: any) {
+    setEditing(t);
+    setFName(t.name); setFDesc(t.description || ''); setFDuration(t.defaultDurationMinutes);
+    setFColor(t.color || '#2563EB'); setFActive(t.isActive !== false);
+    setFOrder(t.sortOrder ?? 0); setFNotes(t.notes || '');
+    setDrawerErr(''); setDrawerOpen(true);
+  }
+  function closeDrawer() { setDrawerOpen(false); setEditing(null); setDrawerErr(''); }
+
+  function handleSave() {
+    if (!fName.trim()) { setDrawerErr('Informe o nome do tipo de atendimento.'); return; }
+    if (fDuration < 1) { setDrawerErr('Duração deve ser de pelo menos 1 minuto.'); return; }
+    const payload = {
+      name: fName.trim(),
+      description: fDesc || null,
+      defaultDurationMinutes: fDuration,
+      color: fColor,
+      isActive: fActive,
+      sortOrder: fOrder,
+      notes: fNotes || null,
+    };
+    if (editing) { updateMut.mutate({ id: editing.id, data: payload }); }
+    else { createMut.mutate(payload); }
+  }
+
+  const isSaving = createMut.isPending || updateMut.isPending;
+
+  const inp: React.CSSProperties = { width: '100%', height: 36, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#FFFFFF', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
+  const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 500, color: '#71717A', display: 'block', marginBottom: 4 };
+
+  return (
+    <SubView
+      title="Tipos de atendimento"
+      desc="Configure os tipos de consulta e atendimento com duração padrão."
+      icon="ti-stethoscope" iconBg={mc.bg} iconColor={mc.color}
+      parentLabel="Agenda" onBack={onBack}
+      actions={
+        <button onClick={openNew} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo tipo
+        </button>
+      }
+    >
+      {isLoading ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</div>
+      ) : types.length === 0 ? (
+        <div style={{ padding: '48px 40px', textAlign: 'center' }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <i className="ti ti-stethoscope" style={{ fontSize: 24, color: mc.color }} />
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B', marginBottom: 6 }}>Nenhum tipo cadastrado</div>
+          <div style={{ fontSize: 13, color: '#71717A', marginBottom: 20 }}>Cadastre os tipos de atendimento para organizar sua agenda.</div>
+          <button onClick={openNew} style={{ height: 36, padding: '0 18px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Criar primeiro tipo
+          </button>
+        </div>
+      ) : (
+        <div style={{ padding: '0 28px 28px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>
+                {['Nome', 'Duração', 'Cor', 'Status', 'Ações'].map((h, i) => (
+                  <th key={h} style={{ padding: '9px 14px', textAlign: i === 4 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {types.map(t => (
+                <tr key={t.id} style={{ borderBottom: '1px solid #F4F4F5' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F9F9F9'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
+                  <td style={{ padding: '11px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: t.color || '#2563EB', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#09090B' }}>{t.name}</span>
+                    </div>
+                    {t.description && <div style={{ fontSize: 11, color: '#71717A', marginTop: 2, paddingLeft: 20 }}>{t.description}</div>}
+                  </td>
+                  <td style={{ padding: '11px 14px', fontSize: 13, color: '#374151' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: '#EFF6FF', color: '#2563EB' }}>
+                      {t.defaultDurationMinutes} min
+                    </span>
+                  </td>
+                  <td style={{ padding: '11px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, background: t.color || '#2563EB', border: '1px solid rgba(0,0,0,0.1)' }} />
+                      <span style={{ fontSize: 12, color: '#71717A' }}>{APPT_TYPE_COLORS.find(c => c.value === t.color)?.label || t.color}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: '11px 14px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: t.isActive !== false ? '#DCFCE7' : '#F4F4F5', color: t.isActive !== false ? '#16A34A' : '#71717A' }}>
+                      {t.isActive !== false ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <button onClick={() => openEdit(t)}
+                        style={{ height: 30, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, fontWeight: 500, color: '#374151', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <i className="ti ti-edit" style={{ fontSize: 12 }} /> Editar
+                      </button>
+                      <button onClick={() => updateMut.mutate({ id: t.id, data: { isActive: !(t.isActive !== false) } })}
+                        style={{ height: 30, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {t.isActive !== false ? 'Inativar' : 'Ativar'}
+                      </button>
+                      {delConfirm === t.id ? (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => deleteMut.mutate(t.id)}
+                            style={{ height: 30, padding: '0 10px', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#FFF', background: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Confirmar
+                          </button>
+                          <button onClick={() => setDelConfirm(null)}
+                            style={{ height: 30, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, color: '#71717A', background: '#FFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setDelConfirm(t.id)}
+                          style={{ height: 30, width: 30, border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 14, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <i className="ti ti-trash" style={{ fontSize: 13 }} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <>
+          <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, background: '#FFF', zIndex: 9001, boxShadow: '-4px 0 32px rgba(0,0,0,.14)', display: 'flex', flexDirection: 'column', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideRight .22s cubic-bezier(0.32,0.72,0,1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #E4E4E7', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="ti ti-stethoscope" style={{ fontSize: 16, color: mc.color }} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 15, fontWeight: 700, color: '#09090B', margin: 0 }}>{editing ? 'Editar tipo' : 'Novo tipo de atendimento'}</h2>
+                  <p style={{ fontSize: 12, color: '#71717A', margin: '2px 0 0' }}>Configure o tipo e a duração padrão</p>
+                </div>
+              </div>
+              <button onClick={closeDrawer} style={{ width: 28, height: 28, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ti ti-x" style={{ fontSize: 13, color: '#71717A' }} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={lbl}>Nome do tipo *</label>
+                <input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: Consulta inicial" style={inp} autoFocus />
+              </div>
+              <div>
+                <label style={lbl}>Descrição</label>
+                <input value={fDesc} onChange={e => setFDesc(e.target.value)} placeholder="Opcional" style={inp} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={lbl}>Duração padrão (minutos) *</label>
+                  <input type="number" min={1} max={480} value={fDuration} onChange={e => setFDuration(Number(e.target.value))} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Ordem de exibição</label>
+                  <input type="number" min={0} value={fOrder} onChange={e => setFOrder(Number(e.target.value))} style={inp} />
+                </div>
+              </div>
+
+              <div>
+                <label style={lbl}>Cor</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                  {APPT_TYPE_COLORS.map(c => (
+                    <button key={c.value} onClick={() => setFColor(c.value)} title={c.label}
+                      style={{ width: 32, height: 32, borderRadius: 8, background: c.value, border: fColor === c.value ? '3px solid #000' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {fColor === c.value && <i className="ti ti-check" style={{ fontSize: 14, color: '#FFF' }} />}
+                    </button>
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="color" value={fColor} onChange={e => setFColor(e.target.value)}
+                      style={{ width: 32, height: 32, border: '1px solid #E4E4E7', borderRadius: 8, cursor: 'pointer', padding: 2 }} />
+                    <span style={{ fontSize: 11, color: '#71717A' }}>Personalizada</span>
+                  </div>
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: fColor }} />
+                  <span style={{ fontSize: 12, color: '#71717A' }}>Prévia: {APPT_TYPE_COLORS.find(c => c.value === fColor)?.label || fColor}</span>
+                </div>
+              </div>
+
+              <div>
+                <label style={lbl}>Status</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[true, false].map(v => (
+                    <button key={String(v)} onClick={() => setFActive(v)}
+                      style={{ flex: 1, height: 36, border: `1.5px solid ${fActive === v ? (v ? '#16A34A' : '#DC2626') : '#E4E4E7'}`, borderRadius: 8, background: fActive === v ? (v ? '#DCFCE7' : '#FEF2F2') : '#FFF', fontSize: 13, fontWeight: fActive === v ? 600 : 400, color: fActive === v ? (v ? '#16A34A' : '#DC2626') : '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {v ? 'Ativo' : 'Inativo'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={lbl}>Observações</label>
+                <textarea value={fNotes} onChange={e => setFNotes(e.target.value)} rows={2}
+                  style={{ ...inp, height: 'auto', padding: '8px 10px', resize: 'vertical' }} placeholder="Opcional" />
+              </div>
+
+              {drawerErr && (
+                <div style={{ padding: '10px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, fontSize: 12, color: '#DC2626' }}>
+                  <i className="ti ti-alert-circle" style={{ fontSize: 13, marginRight: 6 }} />{drawerErr}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 10, flexShrink: 0, background: '#FAFAFA' }}>
+              <button onClick={closeDrawer} style={{ flex: 1, height: 40, border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#71717A', background: '#FFF', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+              <button onClick={handleSave} disabled={isSaving}
+                style={{ flex: 2, height: 40, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFF', background: isSaving ? '#A1A1AA' : '#000', cursor: isSaving ? 'wait' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                {isSaving ? <><i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> Salvando...</> : <><i className="ti ti-check" style={{ fontSize: 14 }} /> {editing ? 'Salvar alterações' : 'Criar tipo'}</>}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </SubView>
+  );
+}
+
 // ─── Agenda: Status ──────────────────────────────────────────────────────────
 const AGENDA_STATUS_LS = 'pcl_agenda_status_config';
 const DEFAULT_STATUSES = [
@@ -1470,9 +1767,232 @@ function PaymentMethodsView({ onBack, mc }: { onBack: () => void; mc: ModInfo })
   );
 }
 
+// ─── Contract Templates ───────────────────────────────────────────────────────
+const CONTRACT_VARS = [
+  '{{nome_paciente}}', '{{cpf_paciente}}', '{{data_nascimento}}', '{{telefone_paciente}}',
+  '{{email_paciente}}', '{{endereco_paciente}}', '{{data_atual}}',
+  '{{nome_clinica}}', '{{cnpj_clinica}}', '{{endereco_clinica}}',
+  '{{procedimento}}', '{{valor}}', '{{qtd_sessoes}}', '{{validade_dias}}', '{{profissional}}',
+];
+
+function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
+  const qc = useQueryClient();
+  const [search,        setSearch]        = useState('');
+  const [drawerOpen,    setDrawerOpen]    = useState(false);
+  const [editingTpl,    setEditingTpl]    = useState<any>(null);
+  const [form,          setForm]          = useState({ name: '', description: '', isActive: true });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [editorContent, setEditorContent] = useState('');
+  const [drawerError,   setDrawerError]   = useState<string | null>(null);
+  const [drawerSuccess, setDrawerSuccess] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const initial = editingTpl?.content || '';
+    setEditorContent(initial);
+    if (editorRef.current) editorRef.current.innerHTML = initial;
+  }, [drawerOpen]); // eslint-disable-line
+
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: ['contract-templates'],
+    queryFn: contractTemplatesApi.list,
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['contract-templates'] });
+
+  const createMut = useMutation({
+    mutationFn: (d: any) => contractTemplatesApi.create(d),
+    onSuccess: () => { invalidate(); setDrawerSuccess(true); setTimeout(closeDrawer, 1200); },
+    onError: (e: any) => { const r = e?.response?.data?.message; setDrawerError(Array.isArray(r) ? r.join(' · ') : (r || e?.message || 'Erro ao criar modelo.')); },
+  });
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => contractTemplatesApi.update(id, data),
+    onSuccess: () => { invalidate(); setDrawerSuccess(true); setTimeout(closeDrawer, 1200); },
+    onError: (e: any) => { const r = e?.response?.data?.message; setDrawerError(Array.isArray(r) ? r.join(' · ') : (r || e?.message || 'Erro ao salvar.')); },
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => contractTemplatesApi.remove(id),
+    onSuccess: () => { invalidate(); setDeleteConfirm(null); },
+  });
+
+  const openDrawer = (tpl?: any) => {
+    setDrawerError(null); setDrawerSuccess(false);
+    if (tpl) { setEditingTpl(tpl); setForm({ name: tpl.name, description: tpl.description || '', isActive: tpl.isActive }); setEditorContent(tpl.content || ''); }
+    else      { setEditingTpl(null); setForm({ name: '', description: '', isActive: true }); setEditorContent(''); }
+    setDrawerOpen(true);
+  };
+  const closeDrawer = () => {
+    setDrawerOpen(false); setEditingTpl(null);
+    setForm({ name: '', description: '', isActive: true }); setEditorContent('');
+    setDrawerError(null); setDrawerSuccess(false);
+  };
+
+  const handleSave = () => {
+    setDrawerError(null);
+    const rawHtml = editorContent || editorRef.current?.innerHTML || '';
+    if (!form.name.trim()) { setDrawerError('O nome do modelo é obrigatório.'); return; }
+    if (!rawHtml.replace(/<[^>]*>/g, '').trim()) { setDrawerError('O conteúdo do modelo é obrigatório.'); return; }
+    const data = { name: form.name.trim(), description: form.description, content: rawHtml, isActive: form.isActive };
+    if (editingTpl) updateMut.mutate({ id: editingTpl.id, data });
+    else createMut.mutate(data);
+  };
+
+  const handleDuplicate = (t: any) => {
+    createMut.mutate({ name: `${t.name} (cópia)`, description: t.description, content: t.content, isActive: true });
+  };
+  const handleToggleActive = (t: any) => updateMut.mutate({ id: t.id, data: { isActive: !t.isActive } });
+  const execCmd = (cmd: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, undefined); };
+
+  const filtered = (templates as any[]).filter(t =>
+    !search || t.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const isSaving = createMut.isPending || updateMut.isPending;
+
+  return (
+    <SubView title="Modelos de contrato" desc="Crie e gerencie modelos de contrato para vincular a procedimentos e serviços." icon="ti-file-certificate" iconBg={mc.bg} iconColor={mc.color} parentLabel="Contratos" onBack={onBack}
+      actions={<button onClick={() => openDrawer()} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}><i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo modelo</button>}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #E4E4E7', borderRadius: 8, padding: '0 12px', height: 36, flex: 1, maxWidth: 320 }}>
+          <i className="ti ti-search" style={{ fontSize: 14, color: '#A1A1AA' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar modelos de contrato..." style={{ border: 'none', background: 'transparent', fontSize: 13, outline: 'none', width: '100%', color: '#09090B', fontFamily: 'inherit' }} />
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E4E4E7', overflow: 'hidden' }}>
+        {isLoading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando modelos...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: '56px 40px', textAlign: 'center' }}>
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <i className="ti ti-file-certificate" style={{ fontSize: 24, color: mc.color }} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#09090B', marginBottom: 6 }}>{search ? 'Nenhum resultado' : 'Nenhum modelo cadastrado'}</div>
+            <div style={{ fontSize: 13, color: '#71717A', marginBottom: 20 }}>{search ? 'Ajuste o termo de busca.' : 'Crie o primeiro modelo de contrato para vincular a procedimentos.'}</div>
+            {!search && <button onClick={() => openDrawer()} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Criar modelo</button>}
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>
+                {['NOME', 'DESCRIÇÃO', 'STATUS', 'AÇÕES'].map(h => (
+                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((t: any) => (
+                <tr key={t.id} style={{ borderBottom: '1px solid #F4F4F5' }} onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <td style={{ padding: '13px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <i className="ti ti-file-certificate" style={{ fontSize: 14, color: mc.color }} />
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B' }}>{t.name}</div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '13px 16px', fontSize: 12, color: '#71717A', maxWidth: 260 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || '—'}</div>
+                  </td>
+                  <td style={{ padding: '13px 16px' }}>
+                    <button onClick={() => handleToggleActive(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: t.isActive ? '#DCFCE7' : '#F4F4F5', color: t.isActive ? '#16A34A' : '#71717A' }}>{t.isActive ? 'Ativo' : 'Inativo'}</span>
+                    </button>
+                  </td>
+                  <td style={{ padding: '13px 16px' }}>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      <button onClick={() => openDrawer(t)} title="Editar" style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-pencil" style={{ fontSize: 13, color: '#71717A' }} /></button>
+                      <button onClick={() => handleDuplicate(t)} title="Duplicar" style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-copy" style={{ fontSize: 13, color: '#71717A' }} /></button>
+                      <button onClick={() => setDeleteConfirm(t.id)} title="Excluir" style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#FEF2F2')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-trash" style={{ fontSize: 13, color: '#EF4444' }} /></button>
+                      {deleteConfirm === t.id && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
+                          <button onClick={() => deleteMut.mutate(t.id)} style={{ height: 26, padding: '0 10px', background: '#DC2626', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Confirmar</button>
+                          <button onClick={() => setDeleteConfirm(null)} style={{ height: 26, padding: '0 8px', background: 'none', border: '1px solid #E4E4E7', borderRadius: 6, fontSize: 11, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Drawer */}
+      {drawerOpen && (
+        <>
+          <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', zIndex: 1000 }} />
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 600, background: '#fff', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 32px rgba(0,0,0,.12)', animation: 'slideInRight 0.22s ease' }}>
+            <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>{editingTpl ? 'Editar modelo' : 'Novo modelo de contrato'}</div>
+                <div style={{ fontSize: 12, color: '#71717A', marginTop: 2 }}>{editingTpl ? `Editando: ${editingTpl.name}` : 'Preencha os dados do contrato'}</div>
+              </div>
+              <button onClick={closeDrawer} style={{ width: 32, height: 32, border: '1px solid #E4E4E7', borderRadius: 8, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}><i className="ti ti-x" style={{ fontSize: 16 }} /></button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Nome do modelo *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Contrato de prestação de serviços" style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} /></div>
+              <div><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Descrição</label><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Breve descrição (opcional)" style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} /></div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Conteúdo do contrato *</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '6px 8px', background: '#F9FAFB', borderRadius: '8px 8px 0 0', border: '1px solid #E4E4E7', borderBottom: 'none' }}>
+                  {[{ cmd: 'bold', icon: 'ti-bold' }, { cmd: 'italic', icon: 'ti-italic' }, { cmd: 'underline', icon: 'ti-underline' }].map(b => (
+                    <button key={b.cmd} className="rte-btn" onMouseDown={e => { e.preventDefault(); execCmd(b.cmd); }}><i className={`ti ${b.icon}`} style={{ fontSize: 13 }} /></button>
+                  ))}
+                  <div style={{ width: 1, height: 18, background: '#E4E4E7', margin: '5px 3px' }} />
+                  {[{ cmd: 'insertUnorderedList', icon: 'ti-list' }, { cmd: 'insertOrderedList', icon: 'ti-list-numbers' }].map(b => (
+                    <button key={b.cmd} className="rte-btn" onMouseDown={e => { e.preventDefault(); execCmd(b.cmd); }}><i className={`ti ${b.icon}`} style={{ fontSize: 13 }} /></button>
+                  ))}
+                </div>
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  data-placeholder="Digite o conteúdo do contrato. Use as variáveis abaixo para dados dinâmicos..."
+                  onInput={e => { setEditorContent((e.currentTarget as HTMLDivElement).innerHTML); setDrawerError(null); }}
+                  style={{ minHeight: 260, maxHeight: 360, overflowY: 'auto', padding: 12, border: '1px solid #E4E4E7', borderRadius: '0 0 8px 8px', fontSize: 13, color: '#09090B', outline: 'none', lineHeight: 1.8, background: '#fff', fontFamily: "'Inter', system-ui, sans-serif" }}
+                />
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: '#71717A', marginBottom: 6, fontWeight: 500 }}>Variáveis disponíveis:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {CONTRACT_VARS.map(v => (
+                      <button key={v} onClick={() => { editorRef.current?.focus(); document.execCommand('insertText', false, v); setTimeout(() => { if (editorRef.current) setEditorContent(editorRef.current.innerHTML); }, 0); }}
+                        style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: '#F5F3FF', color: '#7C3AED', border: '1px solid #DDD6FE', cursor: 'pointer', fontFamily: 'monospace' }}>
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div style={{ background: '#F9FAFB', borderRadius: 10, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div><div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Ativo</div><div style={{ fontSize: 11, color: '#71717A' }}>Disponível para vincular a procedimentos</div></div>
+                <button onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))} style={{ width: 36, height: 20, borderRadius: 99, cursor: 'pointer', background: form.isActive ? '#000' : '#E4E4E7', border: 'none', position: 'relative', flexShrink: 0 }}>
+                  <div style={{ position: 'absolute', top: 3, left: form.isActive ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.18s' }} />
+                </button>
+              </div>
+            </div>
+            <div style={{ flexShrink: 0, padding: '12px 24px 16px', borderTop: '1px solid #E4E4E7', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {drawerError && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8 }}><i className="ti ti-alert-circle" style={{ fontSize: 14, color: '#DC2626', flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 12, color: '#DC2626' }}>{drawerError}</span></div>}
+              {drawerSuccess && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8 }}><i className="ti ti-circle-check" style={{ fontSize: 14, color: '#16A34A' }} /><span style={{ fontSize: 12, color: '#16A34A', fontWeight: 500 }}>{editingTpl ? 'Modelo atualizado.' : 'Modelo criado.'}</span></div>}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={closeDrawer} style={{ height: 38, padding: '0 18px', background: '#fff', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={handleSave} disabled={isSaving || drawerSuccess} style={{ flex: 1, height: 38, background: (isSaving || drawerSuccess) ? '#A1A1AA' : '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: (isSaving || drawerSuccess) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  {isSaving ? <><div style={{ width: 13, height: 13, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /> Salvando...</> : editingTpl ? 'Salvar alterações' : 'Criar modelo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </SubView>
+  );
+}
+
 // ─── Main SettingsPage ────────────────────────────────────────────────────────
 export function SettingsPage() {
-  const [activeNav,   setActiveNav]   = useState('overview');
+  const [searchParams] = useSearchParams();
+  const [activeNav,   setActiveNav]   = useState(() => searchParams.get('section') || 'overview');
   const [openSubItem, setOpenSubItem] = useState<string | null>(null);
 
   const goTo = (key: string) => { setActiveNav(key); setOpenSubItem(null); };
@@ -1483,6 +2003,7 @@ export function SettingsPage() {
   const renderContent = () => {
     if (activeNav === 'overview') return <OverviewSection goTo={goTo} />;
     if (activeNav === 'procedures') return <ProceduresPage />;
+    if (activeNav === 'integrations') return <IntegrationsView />;
     if (activeNav === 'sessions') return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 360, animation: 'fadeUp 0.2s ease' }}>
         <div style={{ width: 64, height: 64, borderRadius: 18, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}><i className={`ti ${mc.icon}`} style={{ fontSize: 28, color: mc.color }} /></div>
@@ -1501,6 +2022,7 @@ export function SettingsPage() {
         case 'clinic-rooms':        return <RoomsView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'users-list':          return <UsersView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'users-profiles':      return <AccessProfilesView onBack={() => setOpenSubItem(null)} mc={mc} />;
+        case 'agenda-types':        return <AppointmentTypesView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'agenda-status':       return <AgendaStatusView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'agenda-holidays':     return <HolidaysView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'contatos-types':      return <ContactTypesView onBack={() => setOpenSubItem(null)} mc={mc} />;
@@ -1510,6 +2032,7 @@ export function SettingsPage() {
         case 'dre-contas':          return <DreAccountsView onBack={() => setOpenSubItem(null)} />;
         case 'payment-methods':     return <PaymentMethodsView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'receipt-models':      return <PlaceholderSubView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Modelos de recibo" mc={mc} />;
+        case 'contract-templates':  return <ContractTemplatesView onBack={() => setOpenSubItem(null)} mc={mc} />;
         default: return null;
       }
     }
@@ -1590,9 +2113,280 @@ export function SettingsPage() {
             })}
           </div>
           {/* Content */}
-          <div style={{ flex: 1, minWidth: 0, overflowY: activeNav === 'procedures' ? 'hidden' : 'auto', display: activeNav === 'procedures' ? 'flex' : 'block', flexDirection: activeNav === 'procedures' ? 'column' : undefined, padding: activeNav === 'procedures' ? 0 : '28px 32px' }}>
+          <div style={{ flex: 1, minWidth: 0, overflowY: activeNav === 'procedures' ? 'hidden' : 'auto', display: activeNav === 'procedures' ? 'flex' : 'block', flexDirection: activeNav === 'procedures' ? 'column' : undefined, padding: (activeNav === 'procedures') ? 0 : '28px 32px' }} key={activeNav}>
             {renderContent()}
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Integrations ─────────────────────────────────────────────────────────────
+function IntegrationsView() {
+  const [showWA, setShowWA] = useState(false);
+  return (
+    <div style={{ animation: 'fadeUp 0.2s ease' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191C1D', margin: 0 }}>Integrações</h2>
+        <p style={{ fontSize: 13, color: '#71717A', margin: '4px 0 0' }}>Conecte o sistema a ferramentas externas.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        {/* WhatsApp card */}
+        <div
+          onClick={() => setShowWA(true)}
+          style={{ background: '#fff', borderRadius: 14, border: '1px solid #E5E7EB', padding: '22px 20px', cursor: 'pointer', transition: 'box-shadow .15s, border-color .15s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,.08)'; (e.currentTarget as HTMLElement).style.borderColor = '#D4D4D8'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = 'none'; (e.currentTarget as HTMLElement).style.borderColor = '#E5E7EB'; }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="ti ti-brand-whatsapp" style={{ fontSize: 22, color: '#16A34A' }} />
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 99, background: '#DCFCE7', color: '#16A34A' }}>Disponível</span>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D', marginBottom: 4 }}>WhatsApp</div>
+          <div style={{ fontSize: 12, color: '#71717A', lineHeight: 1.6 }}>Conecte um número via Evolution API para enviar e receber mensagens diretamente no sistema.</div>
+          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4F46E5', fontWeight: 500 }}>
+            Configurar <i className="ti ti-arrow-right" style={{ fontSize: 13 }} />
+          </div>
+        </div>
+        {/* Placeholder cards */}
+        {[
+          { icon: 'ti-mail', label: 'E-mail', desc: 'Integração com serviços de e-mail para notificações e comunicações.' },
+          { icon: 'ti-brand-google', label: 'Google Calendar', desc: 'Sincronize agendamentos com o Google Calendar.' },
+        ].map(card => (
+          <div key={card.label} style={{ background: '#fff', borderRadius: 14, border: '1px solid #E5E7EB', padding: '22px 20px', opacity: 0.6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className={`ti ${card.icon}`} style={{ fontSize: 22, color: '#71717A' }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 99, background: '#F4F4F5', color: '#71717A' }}>Em breve</span>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D', marginBottom: 4 }}>{card.label}</div>
+            <div style={{ fontSize: 12, color: '#71717A', lineHeight: 1.6 }}>{card.desc}</div>
+          </div>
+        ))}
+      </div>
+      {showWA && <WhatsAppConfigPanel onClose={() => setShowWA(false)} />}
+    </div>
+  );
+}
+
+function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: cfg } = useQuery({
+    queryKey: ['wp-config'],
+    queryFn: () => whatsAppApi.getConfig(),
+    retry: false,
+  });
+  const { data: status, refetch: refetchStatus } = useQuery({
+    queryKey: ['wp-config-status'],
+    queryFn: () => whatsAppApi.getStatus(),
+    enabled: !!cfg,
+    retry: false,
+    refetchInterval: cfg ? 10000 : false,
+  });
+
+  const [baseUrl,      setBaseUrl]      = useState('');
+  const [apiKey,       setApiKey]       = useState('');
+  const [instanceName, setInstanceName] = useState('');
+  const [webhookUrl,   setWebhookUrl]   = useState('');
+  const [active,       setActive]       = useState(true);
+  const [qrData,       setQrData]       = useState<{ qrcode: string | null } | null>(null);
+  const [qrLoading,    setQrLoading]    = useState(false);
+  const [saving,       setSaving]       = useState(false);
+
+  useEffect(() => {
+    if (cfg) {
+      setBaseUrl(cfg.baseUrl || '');
+      setApiKey('');  // never prefill the masked key
+      setInstanceName(cfg.instanceName || '');
+      setWebhookUrl(cfg.webhookUrl || '');
+      setActive(cfg.active ?? true);
+    }
+  }, [cfg]);
+
+  const handleSave = async () => {
+    if (!baseUrl || !instanceName) { toast('URL base e nome da instância são obrigatórios', 'error'); return; }
+    if (!cfg && !apiKey) { toast('API Key obrigatória na primeira configuração', 'error'); return; }
+    setSaving(true);
+    try {
+      await whatsAppApi.saveConfig({ baseUrl, apiKey: apiKey || undefined, instanceName, active, webhookUrl: webhookUrl || undefined });
+      qc.invalidateQueries({ queryKey: ['wp-config'] });
+      qc.invalidateQueries({ queryKey: ['wp-status'] });
+      toast('Configuração salva com sucesso!', 'success');
+      setApiKey('');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Erro ao salvar configuração', 'error');
+    } finally { setSaving(false); }
+  };
+
+  const handleQrCode = async () => {
+    setQrLoading(true); setQrData(null);
+    try {
+      const result = await whatsAppApi.generateQrCode();
+      setQrData(result);
+      // Start polling status
+      setTimeout(() => { refetchStatus(); qc.invalidateQueries({ queryKey: ['wp-status'] }); }, 3000);
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Erro ao gerar QR Code', 'error');
+    } finally { setQrLoading(false); }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await whatsAppApi.disconnect();
+      qc.invalidateQueries({ queryKey: ['wp-config'] });
+      qc.invalidateQueries({ queryKey: ['wp-status'] });
+      qc.invalidateQueries({ queryKey: ['wp-config-status'] });
+      toast('WhatsApp desconectado', 'success');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Erro ao desconectar', 'error');
+    }
+  };
+
+  const isConnected = status?.connected === true;
+
+  return (
+    <>
+      {/* Overlay */}
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 998 }} />
+      {/* Panel */}
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, background: '#FFFFFF', zIndex: 999, boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.22s ease', fontFamily: "'Inter', system-ui, sans-serif" }}>
+        {/* Header */}
+        <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <i className="ti ti-brand-whatsapp" style={{ fontSize: 20, color: '#16A34A' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>WhatsApp — Evolution API</div>
+            <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Configure e gerencie a conexão do WhatsApp</div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, border: 'none', background: 'transparent', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}>
+            <i className="ti ti-x" style={{ fontSize: 16 }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Warning */}
+          <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10 }}>
+            <i className="ti ti-alert-triangle" style={{ fontSize: 15, color: '#D97706', flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
+              Esta integração usa Evolution API / WhatsApp Web. É indicada para testes e operação inicial, mas <strong>não é a integração oficial da Meta</strong>. Pode haver desconexões ou instabilidade.
+            </div>
+          </div>
+
+          {/* Connection status */}
+          {cfg && (
+            <div style={{ background: isConnected ? '#F0FDF4' : '#FEF2F2', border: `1px solid ${isConnected ? '#BBF7D0' : '#FECACA'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: isConnected ? '#16A34A' : '#DC2626', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: isConnected ? '#15803D' : '#DC2626' }}>
+                  {isConnected ? 'Conectado' : 'Desconectado'}
+                </div>
+                <div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>Instância: {cfg.instanceName}</div>
+              </div>
+              {isConnected && (
+                <button onClick={handleDisconnect}
+                  style={{ height: 28, padding: '0 10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 7, fontSize: 11, fontWeight: 600, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Desconectar
+                </button>
+              )}
+              <button onClick={() => { refetchStatus(); qc.invalidateQueries({ queryKey: ['wp-status'] }); }}
+                style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <i className="ti ti-refresh" style={{ fontSize: 12 }} />
+              </button>
+            </div>
+          )}
+
+          {/* Config fields */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#09090B', textTransform: 'uppercase', letterSpacing: '.05em' }}>Configuração da API</div>
+
+            <div>
+              <label style={{ ...lblStyle, fontSize: 12 }}>URL base da Evolution API *</label>
+              <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)}
+                placeholder="https://evolution.seudominio.com.br"
+                style={{ ...inpStyle }} />
+            </div>
+
+            <div>
+              <label style={{ ...lblStyle, fontSize: 12 }}>API Key {cfg ? '(deixe em branco para manter)' : '*'}</label>
+              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+                placeholder={cfg ? '••••••••••••••••' : 'Cole a sua API Key aqui'}
+                style={{ ...inpStyle }} />
+            </div>
+
+            <div>
+              <label style={{ ...lblStyle, fontSize: 12 }}>Nome da instância *</label>
+              <input value={instanceName} onChange={e => setInstanceName(e.target.value)}
+                placeholder="clinica_001"
+                style={{ ...inpStyle }} />
+              <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>Use letras, números e underscores. Ex: clinica_mariasilva</div>
+            </div>
+
+            <div>
+              <label style={{ ...lblStyle, fontSize: 12 }}>Webhook URL (para receber mensagens)</label>
+              <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
+                placeholder="https://api.seusistema.com.br/api/webhooks/evolution/whatsapp"
+                style={{ ...inpStyle }} />
+              <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>URL pública que a Evolution API deve chamar ao receber mensagens</div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" id="wa-active" checked={active} onChange={e => setActive(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#000' }} />
+              <label htmlFor="wa-active" style={{ fontSize: 13, color: '#374151', cursor: 'pointer' }}>Integração ativa</label>
+            </div>
+          </div>
+
+          {/* QR Code area */}
+          {cfg && !isConnected && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#09090B', textTransform: 'uppercase', letterSpacing: '.05em' }}>Conectar via QR Code</div>
+              <div style={{ background: '#F8F9FA', border: '1px solid #E4E4E7', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                {qrData?.qrcode ? (
+                  <>
+                    <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8 }} />
+                    <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
+                      Abra o WhatsApp no celular → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie o código acima.
+                    </div>
+                    <div style={{ fontSize: 11, color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <i className="ti ti-refresh" style={{ fontSize: 11 }} />
+                      Verificando conexão automaticamente...
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ width: 80, height: 80, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className="ti ti-qrcode" style={{ fontSize: 36, color: '#16A34A' }} />
+                    </div>
+                    <div style={{ fontSize: 13, color: '#71717A', textAlign: 'center' }}>Clique em "Gerar QR Code" para conectar um número</div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ flexShrink: 0, borderTop: '1px solid #E4E4E7', padding: '16px 24px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={handleSave} disabled={saving}
+            style={{ height: 38, padding: '0 18px', background: '#000000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+            {saving ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-device-floppy" style={{ fontSize: 14 }} />}
+            Salvar configuração
+          </button>
+          {cfg && !isConnected && (
+            <button onClick={handleQrCode} disabled={qrLoading}
+              style={{ height: 38, padding: '0 16px', background: '#FFFFFF', border: '1px solid #16A34A', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#16A34A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: qrLoading ? 0.7 : 1 }}>
+              {qrLoading ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-qrcode" style={{ fontSize: 14 }} />}
+              Gerar QR Code
+            </button>
+          )}
         </div>
       </div>
     </>

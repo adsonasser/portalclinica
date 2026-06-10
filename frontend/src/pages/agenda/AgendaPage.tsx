@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { patientsApi, agendaApi } from '../../services/api';
+import { patientsApi, agendaApi, appointmentTypesApi, plansApi, financialApi } from '../../services/api';
 
 const HOUR_HEIGHT = 64;
 const HOUR_START = 8;
@@ -28,14 +29,18 @@ const STATUSES: Record<string, { bg:string; border:string; text:string; dot:stri
 interface Prof { id: string; name: string; short: string; color: string; bg: string; }
 const DEFAULT_PROF: Prof = { id: '', name: '—', short: '—', color: '#71717A', bg: '#F4F4F5' };
 
-const TYPES = ['Consulta inicial','Retorno','Avaliação nutricional','Retorno nutricional','Aplicação injetável','Consulta psicológica','Retorno psicológico','Curativo','Encaixe'];
-const ROOMS = ['Sala 01','Sala 02','Enfermagem','Online'];
+// Rooms loaded from localStorage (set in Configurações > Clínica > Salas)
+function loadSettingsRooms(): { id: string; name: string; active: boolean }[] {
+  try { return JSON.parse(localStorage.getItem('pcl_rooms') || '[]'); } catch { return []; }
+}
 
 interface Appt {
-  id: string; profId: string; patient: string; patientId?: string; type: string; status: string;
+  id: string; profId: string; patient: string; patientId?: string;
+  type: string; typeColor?: string; planId?: string; appointmentTypeId?: string; status: string;
   sh: number; sm: number; eh: number; em: number;
   room: string; phone: string; email: string; notes: string;
-  dateOffset?: number; // days from today; 0 or undefined = today
+  dateOffset?: number;
+  saleId?: string; saleStatus?: string; saleTotal?: number; salePaidAmount?: number;
 }
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
@@ -52,20 +57,30 @@ const STATUS_TO_BACKEND: Record<string, string> = {
 };
 
 function mapApiAppt(a: any, todayStart: Date): Appt {
-  const start    = new Date(a.startTime);
-  const end      = new Date(a.endTime);
-  const apptDay  = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const diff     = Math.round((apptDay.getTime() - todayStart.getTime()) / 86400000);
-  const [typeLine, ...rest] = (a.notes || '').split('\n');
+  const start   = new Date(a.startTime);
+  const end     = new Date(a.endTime);
+  const apptDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const diff    = Math.round((apptDay.getTime() - todayStart.getTime()) / 86400000);
+  // appointmentType is the correct type; fall back to old notes-embedded format
+  const hasType = !!a.appointmentType?.name;
+  const noteLines = (a.notes || '').split('\n');
+  const type  = hasType ? a.appointmentType.name : (noteLines[0] || 'Consulta');
+  const notes = hasType ? (a.notes || '') : noteLines.slice(1).join('\n');
+  const typeColor = a.appointmentType?.color || undefined;
   return {
     id: a.id, profId: a.professionalId || '',
     patient: a.patient?.name || '—', patientId: a.patientId,
-    type: typeLine || a.plan?.name || 'Consulta',
+    type, typeColor, planId: a.planId || undefined,
+    appointmentTypeId: a.appointmentTypeId || undefined,
     status: BACKEND_TO_STATUS[a.status] || 'agendado',
     sh: start.getHours(), sm: start.getMinutes(),
     eh: end.getHours(),   em: end.getMinutes(),
-    room: '', phone: a.patient?.phone || '', email: a.patient?.email || '',
-    notes: rest.join('\n'), dateOffset: diff,
+    room: a.room || '', phone: a.patient?.phone || '', email: a.patient?.email || '',
+    notes, dateOffset: diff,
+    saleId: a.sale?.id || undefined,
+    saleStatus: a.sale?.status || undefined,
+    saleTotal: a.sale?.total,
+    salePaidAmount: a.sale?.paidAmount,
   };
 }
 
@@ -147,43 +162,126 @@ function maskBirthDate(v:string) {
 }
 
 interface SelPatient { id:string; name:string; phone:string; cpf?:string; email?:string; }
+interface NovoApptInitial { date?: Date; startTime?: string; profId?: string; roomName?: string; }
 
-function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs }: {
-  onClose:()=>void; defaultDate:Date; onSave:(payload:any)=>Promise<void>; modalProfs: Prof[];
+function calcEndTime(startTime: string, durationMin: number): string {
+  const [sh, sm] = startTime.split(':').map(Number);
+  const total = sh * 60 + sm + durationMin;
+  return `${String(Math.floor(total / 60) % 24).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+}
+
+function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initialValues }: {
+  onClose: () => void;
+  defaultDate: Date;
+  onSave: (payload: any) => Promise<void>;
+  modalProfs: Prof[];
+  initialValues?: NovoApptInitial;
 }) {
+  const initDate = initialValues?.date || defaultDate;
+
   // ── Patient state ──
-  const [mode, setMode]                     = useState<'existing'|'new'>('existing');
-  const [searchQ, setSearchQ]               = useState('');
-  const [searchRes, setSearchRes]           = useState<any[]>([]);
-  const [searching, setSearching]           = useState(false);
-  const [showDrop, setShowDrop]             = useState(false);
-  const [selPat, setSelPat]                 = useState<SelPatient|null>(null);
-  const [savedMsg, setSavedMsg]             = useState('');
-  const [dupWarn, setDupWarn]               = useState<{patient:any; field:string}|null>(null);
-  const [savingPat, setSavingPat]           = useState(false);
-  // new patient fields
-  const [npName, setNpName]     = useState('');
-  const [npPhone, setNpPhone]   = useState('');
-  const [npCpf, setNpCpf]       = useState('');
-  const [npBirth, setNpBirth]   = useState('');
-  const [npEmail, setNpEmail]   = useState('');
+  const [mode, setMode]       = useState<'existing'|'new'>('existing');
+  const [searchQ, setSearchQ] = useState('');
+  const [searchRes, setSearchRes] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showDrop, setShowDrop]   = useState(false);
+  const [selPat, setSelPat]       = useState<SelPatient|null>(null);
+  const [savedMsg, setSavedMsg]   = useState('');
+  const [dupWarn, setDupWarn]     = useState<{patient:any; field:string}|null>(null);
+  const [savingPat, setSavingPat] = useState(false);
+  const [npName, setNpName]   = useState('');
+  const [npPhone, setNpPhone] = useState('');
+  const [npCpf, setNpCpf]     = useState('');
+  const [npBirth, setNpBirth] = useState('');
+  const [npEmail, setNpEmail] = useState('');
   const [npSource, setNpSource] = useState('Agenda');
   const [npNotes, setNpNotes]   = useState('');
   const [npErr, setNpErr]       = useState('');
 
   // ── Appointment state ──
-  const [saving, setSaving]       = useState(false);
-  const [profId, setProfId]       = useState(() => modalProfs[0]?.id || '');
-  const [dateStr, setDateStr]     = useState(() => {
-    const d = defaultDate;
+  const [saving, setSaving]     = useState(false);
+  const [err, setErr]           = useState('');
+  const [profId, setProfId]     = useState(initialValues?.profId || modalProfs[0]?.id || '');
+  const [dateStr, setDateStr]   = useState(() => {
+    const d = initDate;
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime]     = useState('10:00');
-  const [type, setType]           = useState(TYPES[0]);
-  const [room, setRoom]           = useState(ROOMS[0]);
+  const [startTime, setStartTime] = useState(initialValues?.startTime || '09:00');
+  const [endTime, setEndTime]     = useState('');
+  const [endTimeManual, setEndTimeManual] = useState(false);
+  const [planId, setPlanId]       = useState('');
+  const [room, setRoom]           = useState(initialValues?.roomName || '');
   const [apptNotes, setApptNotes] = useState('');
-  const [err, setErr]             = useState('');
+  const [status, setStatus]       = useState('agendado');
+
+  // ── Load appointment types ──
+  const { data: apptTypesData } = useQuery({
+    queryKey: ['appointment-types'],
+    queryFn: () => appointmentTypesApi.list(),
+    staleTime: 5 * 60_000,
+  });
+  const activePlans: any[] = useMemo(() =>
+    ((apptTypesData as any[]) || []).filter((t: any) => t.isActive !== false),
+    [apptTypesData]
+  );
+
+  // ── Reservation state ──
+  const [reservaOpen, setReservaOpen]         = useState(false);
+  const [resPlanId, setResPlanId]             = useState('');
+  const [resTotalAmount, setResTotalAmount]   = useState('');
+  const [resReservaAmount, setResReservaAmount] = useState('');
+  const [resPayMethodId, setResPayMethodId]   = useState('');
+  const [resPayDate, setResPayDate]           = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; });
+  const [resNotes, setResNotes]               = useState('');
+
+  const { data: plansForRes } = useQuery({
+    queryKey: ['plans'],
+    queryFn: () => plansApi.list(),
+    staleTime: 5 * 60_000,
+    enabled: reservaOpen,
+  });
+  const { data: payMethodsForRes } = useQuery({
+    queryKey: ['financial-payment-methods'],
+    queryFn: () => financialApi.paymentMethods(),
+    staleTime: 5 * 60_000,
+    enabled: reservaOpen,
+  });
+  const activeProcPlans = useMemo(() =>
+    ((plansForRes as any[]) || []).filter((p: any) => p.active !== false),
+    [plansForRes]
+  );
+
+  // ── Load rooms from localStorage ──
+  const activeRooms = useMemo(() =>
+    loadSettingsRooms().filter(r => r.active !== false),
+    []
+  );
+
+  // ── Set first plan when plans load ──
+  useEffect(() => {
+    if (activePlans.length > 0 && !planId) {
+      setPlanId(activePlans[0].id);
+    }
+  }, [activePlans, planId]);
+
+  // ── Auto-calc end time when plan or startTime changes ──
+  useEffect(() => {
+    if (endTimeManual || !planId) return;
+    const plan = activePlans.find(p => p.id === planId);
+    if (!plan) return;
+    const duration = plan.defaultDurationMinutes ?? 60;
+    setEndTime(calcEndTime(startTime, duration));
+  }, [planId, startTime, activePlans, endTimeManual]);
+
+  // ── Initialize endTime on first render if no plan yet ──
+  useEffect(() => {
+    if (!endTime && !planId) {
+      const [sh, sm] = (initialValues?.startTime || '09:00').split(':').map(Number);
+      const total = sh * 60 + sm + 60;
+      setEndTime(`${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Patient search debounce ──
   useEffect(() => {
@@ -192,8 +290,7 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs }: {
       setSearching(true);
       try {
         const res = await patientsApi.list({ search: searchQ });
-        setSearchRes(res);
-        setShowDrop(true);
+        setSearchRes(res); setShowDrop(true);
       } catch { setSearchRes([]); } finally { setSearching(false); }
     }, 350);
     return () => clearTimeout(t);
@@ -246,276 +343,422 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs }: {
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
     if (sh*60+sm >= eh*60+em) { setErr('Hora de início deve ser antes da hora de fim.'); return; }
-    const startDt = new Date(`${dateStr}T${startTime}:00`);
-    const endDt   = new Date(`${dateStr}T${endTime}:00`);
-    const realProfId = profId || null;
+    if (reservaOpen && !resTotalAmount) { setErr('Informe o valor total da reserva.'); return; }
     setSaving(true);
     try {
-      await onSave({
-        patientId:      selPat.id,
-        professionalId: realProfId,
-        startTime:      startDt.toISOString(),
-        endTime:        endDt.toISOString(),
-        status:         'AGUARDANDO',
-        notes:          type + (apptNotes ? '\n' + apptNotes : ''),
-      });
+      const selResPlan = activeProcPlans.find((p: any) => p.id === resPlanId);
+      const payload: any = {
+        patientId:         selPat.id,
+        professionalId:    profId || null,
+        appointmentTypeId: planId || null,
+        startTime:         new Date(`${dateStr}T${startTime}:00`).toISOString(),
+        endTime:           new Date(`${dateStr}T${endTime}:00`).toISOString(),
+        status:            STATUS_TO_BACKEND[status] || 'AGUARDANDO',
+        notes:             apptNotes || null,
+        room:              room || null,
+      };
+      if (reservaOpen && resTotalAmount) {
+        payload.reservation = {
+          planId:            resPlanId || null,
+          planName:          selResPlan?.name || 'Reserva de horário',
+          totalAmount:       parseFloat(resTotalAmount.replace(',', '.')),
+          reservationAmount: parseFloat((resReservaAmount || '0').replace(',', '.')),
+          paymentMethodId:   resPayMethodId || null,
+          paymentDate:       resPayDate || null,
+          notes:             resNotes || null,
+        };
+      }
+      await onSave(payload);
       onClose();
-    } catch {
-      setErr('Erro ao salvar agendamento. Tente novamente.');
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Erro ao salvar agendamento. Tente novamente.';
+      setErr(msg);
+    } finally { setSaving(false); }
   }
 
   const inp: React.CSSProperties = { width:'100%', height:36, padding:'0 10px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, color:'#09090B', background:'#FFFFFF', boxSizing:'border-box', fontFamily:'inherit', outline:'none' };
   const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#71717A', display:'block', marginBottom:4 };
   const secHdr: React.CSSProperties = { fontSize:11, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:12 };
 
+  const selPlan = activePlans.find(p => p.id === planId);
+
   return (
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:9000, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:9001, boxShadow:'-4px 0 32px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideRight .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 28px', borderBottom:'1px solid #E4E4E7', flexShrink:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ width:36, height:36, borderRadius:10, background:'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <i className="ti ti-calendar-plus" style={{ fontSize:18, color:'#16A34A' }} />
-          </div>
-          <div>
-            <h2 style={{ fontSize:16, fontWeight:700, color:'#09090B', margin:0 }}>Novo agendamento</h2>
-            <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>Preencha os dados do atendimento</p>
-          </div>
-        </div>
-        <button onClick={onClose} style={{ width:28, height:28, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <i className="ti ti-x" style={{ fontSize:13, color:'#71717A' }} />
-        </button>
-      </div>
 
-      <div style={{ flex:1, overflowY:'auto', padding:'20px 28px', display:'flex', flexDirection:'column', gap:20 }}>
-
-        {/* ── Paciente ── */}
-        <div style={{ background:'#F9F9F9', borderRadius:12, border:'1px solid #E4E4E7', padding:'16px 18px' }}>
-          <div style={secHdr}>Paciente</div>
-
-          {/* Success banner */}
-          {savedMsg && (
-            <div style={{ marginBottom:12, padding:'8px 12px', background:'#DCFCE7', borderRadius:8, border:'1px solid #BBF7D0', display:'flex', alignItems:'center', gap:8 }}>
-              <i className="ti ti-circle-check" style={{ fontSize:14, color:'#16A34A', flexShrink:0 }} />
-              <span style={{ fontSize:12, color:'#15803D', fontWeight:500 }}>{savedMsg}</span>
+        {/* Header */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 28px', borderBottom:'1px solid #E4E4E7', flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <i className="ti ti-calendar-plus" style={{ fontSize:18, color:'#16A34A' }} />
             </div>
-          )}
+            <div>
+              <h2 style={{ fontSize:16, fontWeight:700, color:'#09090B', margin:0 }}>Novo agendamento</h2>
+              <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>
+                {dateStr ? new Date(dateStr+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}) : 'Preencha os dados do atendimento'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width:28, height:28, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <i className="ti ti-x" style={{ fontSize:13, color:'#71717A' }} />
+          </button>
+        </div>
 
-          {/* Selected patient card */}
-          {selPat ? (
-            <div style={{ padding:'10px 12px', background:'#FFFFFF', borderRadius:8, border:'1px solid #BBF7D0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <div style={{ width:34, height:34, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <span style={{ fontSize:12, fontWeight:700, color:'#16A34A' }}>
-                    {selPat.name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>{selPat.name}</div>
-                  <div style={{ fontSize:11, color:'#71717A' }}>
-                    {selPat.phone}{selPat.cpf ? ` · CPF ${selPat.cpf}` : ''}{selPat.email ? ` · ${selPat.email}` : ''}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 28px', display:'flex', flexDirection:'column', gap:20 }}>
+
+          {/* ── Paciente ── */}
+          <div style={{ background:'#F9F9F9', borderRadius:12, border:'1px solid #E4E4E7', padding:'16px 18px' }}>
+            <div style={secHdr}>Paciente</div>
+            {savedMsg && (
+              <div style={{ marginBottom:12, padding:'8px 12px', background:'#DCFCE7', borderRadius:8, border:'1px solid #BBF7D0', display:'flex', alignItems:'center', gap:8 }}>
+                <i className="ti ti-circle-check" style={{ fontSize:14, color:'#16A34A', flexShrink:0 }} />
+                <span style={{ fontSize:12, color:'#15803D', fontWeight:500 }}>{savedMsg}</span>
+              </div>
+            )}
+            {selPat ? (
+              <div style={{ padding:'10px 12px', background:'#FFFFFF', borderRadius:8, border:'1px solid #BBF7D0', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div style={{ width:34, height:34, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#16A34A' }}>
+                      {selPat.name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>{selPat.name}</div>
+                    <div style={{ fontSize:11, color:'#71717A' }}>{selPat.phone}{selPat.cpf?` · CPF ${selPat.cpf}`:''}{selPat.email?` · ${selPat.email}`:''}</div>
                   </div>
                 </div>
+                <button onClick={()=>{ setSelPat(null); setSavedMsg(''); setSearchQ(''); }}
+                  style={{ fontSize:11, color:'#71717A', background:'none', border:'1px solid #E4E4E7', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'inherit' }}>
+                  Trocar
+                </button>
               </div>
-              <button onClick={()=>{ setSelPat(null); setSavedMsg(''); setSearchQ(''); }}
-                style={{ fontSize:11, color:'#71717A', background:'none', border:'1px solid #E4E4E7', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'inherit' }}>
-                Trocar
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Tab switcher */}
-              <div style={{ display:'flex', background:'#ECECEC', borderRadius:8, padding:2, marginBottom:14, gap:1, width:'fit-content' }}>
-                {(['existing','new'] as const).map(m => {
-                  const act = mode === m;
-                  return (
-                    <button key={m} onClick={()=>{ setMode(m); setNpErr(''); setDupWarn(null); }}
-                      style={{ height:28, padding:'0 16px', borderRadius:6, border:'none', fontSize:12, fontWeight:act?600:400, color:act?'#09090B':'#71717A', background:act?'#FFFFFF':'transparent', cursor:'pointer', fontFamily:'inherit', boxShadow:act?'0 1px 3px rgba(0,0,0,.1)':'none', whiteSpace:'nowrap' }}>
-                      {m==='existing' ? 'Paciente existente' : 'Novo paciente'}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* ── Existing patient search ── */}
-              {mode === 'existing' && (
-                <div>
-                  <div style={{ position:'relative' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, padding:'0 12px', height:36 }}>
-                      <i className="ti ti-search" style={{ fontSize:14, color:'#A1A1AA', flexShrink:0 }} />
-                      <input value={searchQ} onChange={e=>{ setSearchQ(e.target.value); }}
-                        onFocus={()=>{ if (searchRes.length > 0) setShowDrop(true); }}
-                        placeholder="Buscar por nome, CPF, telefone ou e-mail..."
-                        style={{ border:'none', background:'transparent', fontSize:13, outline:'none', width:'100%', color:'#09090B', fontFamily:'inherit' }} />
-                      {searching && <i className="ti ti-loader-2" style={{ fontSize:13, color:'#A1A1AA', flexShrink:0, animation:'spin 1s linear infinite' }} />}
+            ) : (
+              <>
+                <div style={{ display:'flex', background:'#ECECEC', borderRadius:8, padding:2, marginBottom:14, gap:1, width:'fit-content' }}>
+                  {(['existing','new'] as const).map(m => {
+                    const act = mode === m;
+                    return (
+                      <button key={m} onClick={()=>{ setMode(m); setNpErr(''); setDupWarn(null); }}
+                        style={{ height:28, padding:'0 16px', borderRadius:6, border:'none', fontSize:12, fontWeight:act?600:400, color:act?'#09090B':'#71717A', background:act?'#FFFFFF':'transparent', cursor:'pointer', fontFamily:'inherit', boxShadow:act?'0 1px 3px rgba(0,0,0,.1)':'none', whiteSpace:'nowrap' }}>
+                        {m==='existing' ? 'Paciente existente' : 'Novo paciente'}
+                      </button>
+                    );
+                  })}
+                </div>
+                {mode === 'existing' && (
+                  <div>
+                    <div style={{ position:'relative' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, padding:'0 12px', height:36 }}>
+                        <i className="ti ti-search" style={{ fontSize:14, color:'#A1A1AA', flexShrink:0 }} />
+                        <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+                          onFocus={()=>{ if (searchRes.length > 0) setShowDrop(true); }}
+                          placeholder="Buscar por nome, CPF ou telefone..."
+                          style={{ border:'none', background:'transparent', fontSize:13, outline:'none', width:'100%', color:'#09090B', fontFamily:'inherit' }} />
+                        {searching && <i className="ti ti-loader-2" style={{ fontSize:13, color:'#A1A1AA', flexShrink:0, animation:'spin 1s linear infinite' }} />}
+                      </div>
+                      {showDrop && searchQ.length >= 2 && (
+                        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, boxShadow:'0 8px 24px rgba(0,0,0,.08)', zIndex:200, maxHeight:220, overflowY:'auto' }}>
+                          {searchRes.length === 0 && !searching ? (
+                            <div style={{ padding:'12px 14px' }}>
+                              <div style={{ fontSize:13, color:'#71717A', marginBottom:8 }}>Nenhum paciente encontrado.</div>
+                              <button onClick={()=>{ setMode('new'); setShowDrop(false); }}
+                                style={{ fontSize:12, color:'#000000', fontWeight:600, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, display:'flex', alignItems:'center', gap:4 }}>
+                                <i className="ti ti-plus" style={{ fontSize:12 }} /> Cadastrar novo paciente
+                              </button>
+                            </div>
+                          ) : searchRes.map((p:any) => (
+                            <div key={p.id} onClick={()=>selectPatient(p)}
+                              onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#F4F4F5'}
+                              onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}
+                              style={{ padding:'9px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid #F4F4F5' }}>
+                              <div style={{ width:30, height:30, borderRadius:'50%', background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                                <span style={{ fontSize:10, fontWeight:700, color:'#71717A' }}>
+                                  {p.name.split(' ').filter(Boolean).slice(0,2).map((w:string)=>w[0]).join('').toUpperCase()}
+                                </span>
+                              </div>
+                              <div>
+                                <div style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>{p.name}</div>
+                                <div style={{ fontSize:11, color:'#71717A' }}>{p.phone||'Sem telefone'}{p.cpf?` · CPF ${p.cpf}`:''}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    {showDrop && searchQ.length >= 2 && (
-                      <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, right:0, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, boxShadow:'0 8px 24px rgba(0,0,0,.08)', zIndex:200, maxHeight:220, overflowY:'auto' }}>
-                        {searchRes.length === 0 && !searching ? (
-                          <div style={{ padding:'12px 14px' }}>
-                            <div style={{ fontSize:13, color:'#71717A', marginBottom:8 }}>Nenhum paciente encontrado.</div>
-                            <button onClick={()=>{ setMode('new'); setShowDrop(false); }}
-                              style={{ fontSize:12, color:'#000000', fontWeight:600, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, display:'flex', alignItems:'center', gap:4 }}>
-                              <i className="ti ti-plus" style={{ fontSize:12 }} /> Cadastrar novo paciente
-                            </button>
-                          </div>
-                        ) : searchRes.map((p:any) => (
-                          <div key={p.id} onClick={()=>selectPatient(p)}
-                            onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#F4F4F5'}
-                            onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}
-                            style={{ padding:'9px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid #F4F4F5' }}>
-                            <div style={{ width:30, height:30, borderRadius:'50%', background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                              <span style={{ fontSize:10, fontWeight:700, color:'#71717A' }}>
-                                {p.name.split(' ').filter(Boolean).slice(0,2).map((w:string)=>w[0]).join('').toUpperCase()}
-                              </span>
-                            </div>
-                            <div>
-                              <div style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>{p.name}</div>
-                              <div style={{ fontSize:11, color:'#71717A' }}>{p.phone||'Sem telefone'}{p.cpf ? ` · CPF ${p.cpf}` : ''}</div>
-                            </div>
-                          </div>
-                        ))}
+                    <div style={{ marginTop:8, display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontSize:12, color:'#A1A1AA' }}>ou</span>
+                      <button onClick={()=>setMode('new')}
+                        style={{ fontSize:12, color:'#000000', fontWeight:600, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, display:'flex', alignItems:'center', gap:4 }}>
+                        <i className="ti ti-plus" style={{ fontSize:12 }} /> Cadastrar novo paciente
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {mode === 'new' && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                    {dupWarn && (
+                      <div style={{ padding:'10px 12px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8 }}>
+                        <div style={{ fontSize:12, color:'#A16207', fontWeight:500, marginBottom:8 }}>
+                          <i className="ti ti-alert-triangle" style={{ fontSize:12, marginRight:5 }} />
+                          Já existe um paciente com {dupWarn.field==='cpf'?'este CPF':'este telefone'}: <strong>{dupWarn.patient.name}</strong>
+                        </div>
+                        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                          <button onClick={()=>{ selectPatient(dupWarn.patient); setDupWarn(null); }}
+                            style={{ fontSize:11, fontWeight:600, color:'#FFFFFF', background:'#000000', border:'none', borderRadius:6, padding:'4px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+                            Usar paciente existente
+                          </button>
+                          <button onClick={()=>setDupWarn(null)}
+                            style={{ fontSize:11, color:'#71717A', background:'none', border:'1px solid #D4D4D8', borderRadius:6, padding:'4px 12px', cursor:'pointer', fontFamily:'inherit' }}>
+                            Continuar assim mesmo
+                          </button>
+                        </div>
                       </div>
                     )}
-                  </div>
-                  <div style={{ marginTop:8, display:'flex', alignItems:'center', gap:6 }}>
-                    <span style={{ fontSize:12, color:'#A1A1AA' }}>ou</span>
-                    <button onClick={()=>setMode('new')}
-                      style={{ fontSize:12, color:'#000000', fontWeight:600, background:'none', border:'none', cursor:'pointer', fontFamily:'inherit', padding:0, display:'flex', alignItems:'center', gap:4 }}>
-                      <i className="ti ti-plus" style={{ fontSize:12 }} /> Cadastrar novo paciente
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── New patient quick form ── */}
-              {mode === 'new' && (
-                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                  {dupWarn && (
-                    <div style={{ padding:'10px 12px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8 }}>
-                      <div style={{ fontSize:12, color:'#A16207', fontWeight:500, marginBottom:8 }}>
-                        <i className="ti ti-alert-triangle" style={{ fontSize:12, marginRight:5 }} />
-                        Já existe um paciente com {dupWarn.field==='cpf'?'este CPF':'este telefone'}: <strong>{dupWarn.patient.name}</strong>
+                    <div><label style={lbl}>Nome completo *</label>
+                      <input value={npName} onChange={e=>setNpName(e.target.value)} placeholder="Nome completo do paciente" style={inp} />
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <div><label style={lbl}>WhatsApp / Telefone *</label>
+                        <input value={npPhone} onChange={e=>setNpPhone(maskPhone(e.target.value))}
+                          onBlur={()=>checkDuplicate('phone', npPhone.replace(/\D/g,''))}
+                          placeholder="(00) 00000-0000" style={inp} />
                       </div>
-                      <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                        <button onClick={()=>{ selectPatient(dupWarn.patient); setDupWarn(null); }}
-                          style={{ fontSize:11, fontWeight:600, color:'#FFFFFF', background:'#000000', border:'none', borderRadius:6, padding:'4px 12px', cursor:'pointer', fontFamily:'inherit' }}>
-                          Usar paciente existente
-                        </button>
-                        <button onClick={()=>setDupWarn(null)}
-                          style={{ fontSize:11, color:'#71717A', background:'none', border:'1px solid #D4D4D8', borderRadius:6, padding:'4px 12px', cursor:'pointer', fontFamily:'inherit' }}>
-                          Continuar assim mesmo
-                        </button>
+                      <div><label style={lbl}>CPF</label>
+                        <input value={npCpf} onChange={e=>setNpCpf(maskCpf(e.target.value))}
+                          onBlur={()=>checkDuplicate('cpf', npCpf.replace(/\D/g,''))}
+                          placeholder="000.000.000-00" style={inp} />
                       </div>
                     </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <div><label style={lbl}>Data de nascimento</label>
+                        <input value={npBirth} onChange={e=>setNpBirth(maskBirthDate(e.target.value))} placeholder="DD/MM/AAAA" style={inp} />
+                      </div>
+                      <div><label style={lbl}>E-mail</label>
+                        <input value={npEmail} onChange={e=>setNpEmail(e.target.value)} placeholder="email@exemplo.com" type="email" style={inp} />
+                      </div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <div><label style={lbl}>Origem</label>
+                        <select value={npSource} onChange={e=>setNpSource(e.target.value)} style={inp}>
+                          {['Agenda','Indicação','Instagram','Google','Facebook','Outro'].map(s=><option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div><label style={lbl}>Observações</label>
+                        <input value={npNotes} onChange={e=>setNpNotes(e.target.value)} placeholder="Opcional" style={inp} />
+                      </div>
+                    </div>
+                    {npErr && <p style={{ fontSize:12, color:'#DC2626', margin:0 }}>{npErr}</p>}
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <button onClick={saveNewPatient} disabled={savingPat}
+                        style={{ height:34, padding:'0 16px', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background:'#000000', cursor:savingPat?'wait':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6, opacity:savingPat?0.7:1 }}>
+                        {savingPat ? <><i className="ti ti-loader-2" style={{ fontSize:13, animation:'spin 1s linear infinite' }} /> Salvando...</> : <><i className="ti ti-check" style={{ fontSize:13 }} /> Salvar paciente</>}
+                      </button>
+                      <button onClick={()=>{ setMode('existing'); setNpErr(''); setDupWarn(null); }}
+                        style={{ fontSize:12, color:'#71717A', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* ── Agendamento ── */}
+          <div>
+            <div style={secHdr}>Agendamento</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+
+              {/* Tipo de atendimento — full width, destaque */}
+              <div>
+                <label style={lbl}>Tipo de atendimento</label>
+                {activePlans.length === 0 ? (
+                  <div style={{ padding:'10px 12px', background:'#FFF7ED', border:'1px solid #FED7AA', borderRadius:8, fontSize:12, color:'#C2410C' }}>
+                    <i className="ti ti-alert-triangle" style={{ fontSize:12, marginRight:6 }} />
+                    Nenhum tipo configurado.{' '}
+                    <a href="/settings" style={{ color:'#C2410C', fontWeight:600 }}>Configurar em Configurações &gt; Procedimentos</a>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                    {activePlans.map((p: any) => {
+                      const sel = planId === p.id;
+                      const color = p.color || '#2563EB';
+                      return (
+                        <button key={p.id} onClick={()=>{ setPlanId(p.id); setEndTimeManual(false); }}
+                          style={{ height:32, padding:'0 12px', borderRadius:99, border:`1.5px solid ${sel ? color : '#E4E4E7'}`, background: sel ? color+'18' : '#FFFFFF', fontSize:12, fontWeight: sel ? 600 : 400, color: sel ? color : '#71717A', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5 }}>
+                          {sel && <i className="ti ti-check" style={{ fontSize:11 }} />}
+                          {p.name}
+                          {p.defaultDurationMinutes
+                            ? <span style={{ fontSize:10, opacity:0.7, marginLeft:2 }}>·{p.defaultDurationMinutes}min</span>
+                            : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={lbl}>Profissional</label>
+                  <select value={profId} onChange={e=>setProfId(e.target.value)} style={inp}>
+                    <option value="">— Sem profissional —</option>
+                    {modalProfs.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lbl}>Sala</label>
+                  {activeRooms.length > 0 ? (
+                    <select value={room} onChange={e=>setRoom(e.target.value)} style={inp}>
+                      <option value="">— Sem sala —</option>
+                      {activeRooms.map(r=><option key={r.id} value={r.name}>{r.name}</option>)}
+                    </select>
+                  ) : (
+                    <input value={room} onChange={e=>setRoom(e.target.value)}
+                      placeholder="Nome da sala (opcional)"
+                      style={inp} />
                   )}
+                </div>
+              </div>
 
-                  <div><label style={lbl}>Nome completo *</label>
-                    <input value={npName} onChange={e=>setNpName(e.target.value)} placeholder="Nome completo do paciente" style={inp} />
-                  </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                    <div><label style={lbl}>WhatsApp / Telefone *</label>
-                      <input value={npPhone} onChange={e=>setNpPhone(maskPhone(e.target.value))}
-                        onBlur={()=>checkDuplicate('phone', npPhone.replace(/\D/g,''))}
-                        placeholder="(00) 00000-0000" style={inp} />
-                    </div>
-                    <div><label style={lbl}>CPF</label>
-                      <input value={npCpf} onChange={e=>setNpCpf(maskCpf(e.target.value))}
-                        onBlur={()=>checkDuplicate('cpf', npCpf.replace(/\D/g,''))}
-                        placeholder="000.000.000-00" style={inp} />
-                    </div>
-                  </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                    <div><label style={lbl}>Data de nascimento</label>
-                      <input value={npBirth} onChange={e=>setNpBirth(maskBirthDate(e.target.value))} placeholder="DD/MM/AAAA" style={inp} />
-                    </div>
-                    <div><label style={lbl}>E-mail</label>
-                      <input value={npEmail} onChange={e=>setNpEmail(e.target.value)} placeholder="email@exemplo.com" type="email" style={inp} />
-                    </div>
-                  </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                    <div><label style={lbl}>Origem</label>
-                      <select value={npSource} onChange={e=>setNpSource(e.target.value)} style={inp}>
-                        {['Agenda','Indicação','Instagram','Google','Facebook','Outro'].map(s=><option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div><label style={lbl}>Observações</label>
-                      <input value={npNotes} onChange={e=>setNpNotes(e.target.value)} placeholder="Opcional" style={inp} />
-                    </div>
-                  </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+                <div>
+                  <label style={lbl}>Data</label>
+                  <input type="date" value={dateStr} onChange={e=>setDateStr(e.target.value)} style={inp} />
+                </div>
+                <div>
+                  <label style={lbl}>Hora início</label>
+                  <input type="time" value={startTime}
+                    onChange={e=>{ setStartTime(e.target.value); setEndTimeManual(false); }}
+                    style={inp} />
+                </div>
+                <div>
+                  <label style={{ ...lbl, display:'flex', alignItems:'center', gap:4 }}>
+                    Hora fim
+                    {!endTimeManual && selPlan && (
+                      <span style={{ fontSize:10, color:'#16A34A', fontWeight:600 }}>
+                        · {selPlan.defaultDurationMinutes ?? 0}min auto
+                      </span>
+                    )}
+                  </label>
+                  <input type="time" value={endTime}
+                    onChange={e=>{ setEndTime(e.target.value); setEndTimeManual(true); }}
+                    style={inp} />
+                </div>
+              </div>
 
-                  {npErr && <p style={{ fontSize:12, color:'#DC2626', margin:0 }}>{npErr}</p>}
+              <div>
+                <label style={lbl}>Status</label>
+                <select value={status} onChange={e=>setStatus(e.target.value)} style={inp}>
+                  {Object.entries(STATUSES).filter(([k])=>!['bloqueado','finalizado','atendimento'].includes(k)).map(([k,v])=>
+                    <option key={k} value={k}>{v.label}</option>
+                  )}
+                </select>
+              </div>
 
-                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                    <button onClick={saveNewPatient} disabled={savingPat}
-                      style={{ height:34, padding:'0 16px', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background:'#000000', cursor:savingPat?'wait':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6, opacity:savingPat?0.7:1 }}>
-                      {savingPat
-                        ? <><i className="ti ti-loader-2" style={{ fontSize:13, animation:'spin 1s linear infinite' }} /> Salvando...</>
-                        : <><i className="ti ti-check" style={{ fontSize:13 }} /> Salvar paciente</>
-                      }
-                    </button>
-                    <button onClick={()=>{ setMode('existing'); setNpErr(''); setDupWarn(null); }}
-                      style={{ fontSize:12, color:'#71717A', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>
-                      Cancelar
-                    </button>
+              <div>
+                <label style={lbl}>Observações</label>
+                <textarea value={apptNotes} onChange={e=>setApptNotes(e.target.value)} rows={2} placeholder="Observações opcionais..."
+                  style={{ ...inp, height:'auto', padding:'8px 10px', resize:'vertical' }} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Reserva financeira ── */}
+          <div>
+            <button onClick={() => setReservaOpen(o => !o)}
+              style={{ width:'100%', height:38, padding:'0 14px', border:`1px solid ${reservaOpen ? '#000000' : '#E4E4E7'}`, borderRadius:8, fontSize:13, fontWeight:500, color: reservaOpen ? '#09090B' : '#71717A', background: reservaOpen ? '#FAFAFA' : '#FFFFFF', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 }}>
+              <i className={`ti ${reservaOpen ? 'ti-chevron-down' : 'ti-chevron-right'}`} style={{ fontSize:12 }} />
+              <i className="ti ti-coin" style={{ fontSize:13, color: reservaOpen ? '#16A34A' : '#A1A1AA' }} />
+              Lançar reserva financeira
+              <span style={{ marginLeft:'auto', fontSize:11, color:'#A1A1AA' }}>opcional</span>
+            </button>
+
+            {reservaOpen && (
+              <div style={{ marginTop:8, padding:'16px 18px', background:'#F9F9F9', borderRadius:10, border:'1px solid #E4E4E7', display:'flex', flexDirection:'column', gap:12 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em' }}>Dados da reserva</div>
+
+                <div>
+                  <label style={lbl}>Procedimento / Plano</label>
+                  <select value={resPlanId} onChange={e => {
+                    setResPlanId(e.target.value);
+                    const p = activeProcPlans.find((x: any) => x.id === e.target.value);
+                    if (p?.price) setResTotalAmount(String(p.price));
+                  }} style={inp}>
+                    <option value="">— Selecionar procedimento —</option>
+                    {activeProcPlans.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name}{p.price ? ` — R$ ${Number(p.price).toFixed(2)}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div>
+                    <label style={lbl}>Valor total (R$) *</label>
+                    <input value={resTotalAmount} onChange={e=>setResTotalAmount(e.target.value)}
+                      placeholder="0,00" style={inp} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Entrada / reserva (R$)</label>
+                    <input value={resReservaAmount} onChange={e=>setResReservaAmount(e.target.value)}
+                      placeholder="0,00" style={inp} />
                   </div>
                 </div>
-              )}
-            </>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div>
+                    <label style={lbl}>Forma de pagamento</label>
+                    <select value={resPayMethodId} onChange={e=>setResPayMethodId(e.target.value)} style={inp}>
+                      <option value="">— Selecionar —</option>
+                      {((payMethodsForRes as any[]) || []).filter((m: any) => m.active !== false).map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lbl}>Data do pagamento</label>
+                    <input type="date" value={resPayDate} onChange={e=>setResPayDate(e.target.value)} style={inp} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={lbl}>Observações da reserva</label>
+                  <input value={resNotes} onChange={e=>setResNotes(e.target.value)}
+                    placeholder="Opcional" style={inp} />
+                </div>
+
+                {resReservaAmount && resTotalAmount && Number(resReservaAmount.replace(',','.')) < Number(resTotalAmount.replace(',','.')) && (
+                  <div style={{ padding:'8px 10px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:7, fontSize:12, color:'#A16207', display:'flex', alignItems:'center', gap:6 }}>
+                    <i className="ti ti-info-circle" style={{ fontSize:12, flexShrink:0 }} />
+                    Saldo de R$ {(Number(resTotalAmount.replace(',','.'))-Number(resReservaAmount.replace(',','.'))).toFixed(2)} ficará como conta a receber.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {err && (
+            <div style={{ padding:'10px 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, display:'flex', alignItems:'center', gap:8 }}>
+              <i className="ti ti-alert-circle" style={{ fontSize:14, color:'#DC2626', flexShrink:0 }} />
+              <span style={{ fontSize:12, color:'#DC2626' }}>{err}</span>
+            </div>
           )}
         </div>
 
-        {/* ── Agendamento ── */}
-        <div>
-          <div style={secHdr}>Agendamento</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              <div><label style={lbl}>Profissional</label>
-                <select value={profId} onChange={e=>setProfId(e.target.value)} style={inp}>
-                  {modalProfs.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div><label style={lbl}>Tipo de atendimento</label>
-                <select value={type} onChange={e=>setType(e.target.value)} style={inp}>
-                  {TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              <div><label style={lbl}>Data</label><input type="date" value={dateStr} onChange={e=>setDateStr(e.target.value)} style={inp} /></div>
-              <div><label style={lbl}>Sala</label>
-                <select value={room} onChange={e=>setRoom(e.target.value)} style={inp}>
-                  {ROOMS.map(r=><option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-              <div><label style={lbl}>Hora início</label><input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp} /></div>
-              <div><label style={lbl}>Hora fim</label><input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={inp} /></div>
-            </div>
-            <div><label style={lbl}>Observações</label>
-              <textarea value={apptNotes} onChange={e=>setApptNotes(e.target.value)} rows={2} placeholder="Observações opcionais..."
-                style={{ ...inp, height:'auto', padding:'8px 10px', resize:'vertical' }} />
-            </div>
-          </div>
+        {/* Footer */}
+        <div style={{ flexShrink:0, padding:'14px 28px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA' }}>
+          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
+          <button onClick={saveAppt} disabled={saving || !selPat}
+            style={{ flex:2, height:40, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background:(selPat && !saving)?'#000000':'#A1A1AA', cursor:(selPat && !saving)?'pointer':'not-allowed', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+            {saving
+              ? <><i className="ti ti-loader-2" style={{ fontSize:14, animation:'spin 1s linear infinite' }} /> Salvando...</>
+              : <><i className="ti ti-calendar-plus" style={{ fontSize:14 }} /> Salvar agendamento</>}
+          </button>
         </div>
-
-        {err && <p style={{ fontSize:12, color:'#DC2626', margin:'0 0 4px' }}>{err}</p>}
       </div>
-
-      {/* Footer */}
-      <div style={{ flexShrink:0, padding:'14px 28px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA' }}>
-        <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
-        <button onClick={saveAppt} disabled={saving || !selPat} style={{ flex:2, height:40, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background: (selPat && !saving) ? '#000000' : '#A1A1AA', cursor:(selPat && !saving)?'pointer':'not-allowed', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-          {saving ? <><i className="ti ti-loader-2" style={{ fontSize:14, animation:'spin 1s linear infinite' }} /> Salvando...</> : <><i className="ti ti-calendar-plus" style={{ fontSize:14 }} /> Salvar agendamento</>}
-        </button>
-      </div>
-    </div>
-  </>
+    </>
   );
 }
 
@@ -575,6 +818,32 @@ function BloquearHorarioModal({ onClose, defaultDate, todayStart, onSave, profs 
   );
 }
 
+const VIEW_LABELS: Record<string, string> = { day: 'Dia', week: 'Semana', month: 'Mês', list: 'Lista' };
+
+// ─── ActionBtn ────────────────────────────────────────────────────────────────
+function ActionBtn({ icon, label, color, bg, onClick, active }: {
+  icon: string; label: string; color: string; bg: string;
+  onClick: () => void; active?: boolean;
+}) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button onClick={onClick}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        style={{ width: 40, height: 40, borderRadius: 10, border: `1.5px solid ${active ? color + '50' : '#E4E4E7'}`, background: active ? bg : '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s, border-color 0.12s', fontFamily: 'inherit' }}>
+        <i className={`ti ${icon}`} style={{ fontSize: 17, color }} />
+      </button>
+      {hov && (
+        <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#18181B', color: '#FFFFFF', fontSize: 11, fontWeight: 500, padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 200 }}>
+          {label}
+          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', borderTop: '4px solid #18181B', borderLeft: '4px solid transparent', borderRight: '4px solid transparent' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function AgendaPage() {
   const navigate     = useNavigate();
@@ -591,20 +860,34 @@ export function AgendaPage() {
   const [calYear, setCalYear]         = useState(todayStart.getFullYear());
   const [calMonth, setCalMonth]       = useState(todayStart.getMonth());
   const [blockedSlots, setBlockedSlots] = useState<Appt[]>(loadBlocked);
-  const [ctxMenu, setCtxMenu]         = useState<{ x:number; y:number; apptId:string|null }|null>(null);
+  const [ctxMenu, setCtxMenu]         = useState<{ x:number; y:number; apptId:string|null; slotTime?:string; slotProfId?:string; slotDate?:Date }|null>(null);
   const [ctxStatusOpen, setCtxStatusOpen] = useState(false);
   const [profChecked, setProfChecked] = useState<Set<string>>(new Set());
   const [roomFilter, setRoomFilter]   = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter]   = useState('');
-  const [showNovoModal, setShowNovoModal]       = useState(false);
-  const [showBloquearModal, setShowBloquearModal] = useState(false);
-  const gridRef = useRef<HTMLDivElement>(null);
+  const [showNovoModal, setShowNovoModal]           = useState(false);
+  const [novoModalInitial, setNovoModalInitial]     = useState<NovoApptInitial | undefined>(undefined);
+  const [showBloquearModal, setShowBloquearModal]   = useState(false);
+  const [showLegend, setShowLegend]                 = useState(false);
+  const [showViewDropdown, setShowViewDropdown]     = useState(false);
+  const [showFiltersDropdown, setShowFiltersDropdown] = useState(false);
+  const gridRef        = useRef<HTMLDivElement>(null);
+  const legendBtnRef   = useRef<HTMLButtonElement>(null);
+  const viewBtnRef     = useRef<HTMLButtonElement>(null);
+  const filtersBtnRef  = useRef<HTMLButtonElement>(null);
 
   // ── Fetch professionals ───────────────────────────────────────────────────
   const { data: profsData } = useQuery({
     queryKey: ['agenda-professionals'],
     queryFn:  agendaApi.professionals,
+    staleTime: 5 * 60_000,
+  });
+
+  // ── Fetch appointment types for toolbar filter ────────────────────────────
+  const { data: plansData } = useQuery({
+    queryKey: ['appointment-types'],
+    queryFn:  () => appointmentTypesApi.list(),
     staleTime: 5 * 60_000,
   });
 
@@ -656,6 +939,7 @@ export function AgendaPage() {
 
   const selectedAppt = appointments.find(a=>a.id===selectedId) || null;
   const visibleProfs = profs.filter(p=>profChecked.has(p.id));
+  const filterCount  = [statusFilter, typeFilter, roomFilter].filter(Boolean).length;
 
   function apptMatchesDate(a:Appt, d:Date):boolean {
     return sameDay(addDays(todayStart, a.dateOffset ?? 0), d);
@@ -729,7 +1013,7 @@ export function AgendaPage() {
   }
 
   useEffect(()=>{
-    const h = () => { setCtxMenu(null); setCtxStatusOpen(false); };
+    const h = () => { setCtxMenu(null); setCtxStatusOpen(false); setShowViewDropdown(false); setShowFiltersDropdown(false); };
     window.addEventListener('click', h);
     return ()=>window.removeEventListener('click', h);
   }, []);
@@ -743,12 +1027,26 @@ export function AgendaPage() {
     setCtxStatusOpen(false);
   };
 
+  // Context menu on empty grid slot — captures time from Y position and profId from column
+  const handleSlotCtxMenu = useCallback((e:React.MouseEvent, profId:string|null, date:Date) => {
+    e.preventDefault(); e.stopPropagation();
+    const rawMinutes = (e.nativeEvent.offsetY / HOUR_HEIGHT) * 60 + HOUR_START * 60;
+    const snapped = Math.floor(rawMinutes / 30) * 30;
+    const clamped = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60, snapped));
+    const h = Math.floor(clamped / 60), m = clamped % 60;
+    const slotTime = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    setCtxMenu({ x:e.clientX, y:e.clientY, apptId:null, slotTime, slotProfId: profId||undefined, slotDate: date });
+    setCtxStatusOpen(false);
+  }, []);
+
   const getProf = (id:string) => profs.find(p=>p.id===id) || profs[0] || DEFAULT_PROF;
 
   // ── ApptCard ─────────────────────────────────────────────────────────────────
   const ApptCard = ({ a }:{ a:Appt }) => {
     const st = STATUSES[a.status] || STATUSES.agendado;
     const pr = getProf(a.profId);
+    // Use appointment type color for left border accent; fall back to professional color
+    const accentColor = a.typeColor || pr.color;
     const top = apptTop(a.sh, a.sm);
     const h = Math.max(apptHeight(a.sh, a.sm, a.eh, a.em), 24);
     const sel = a.id===selectedId;
@@ -756,17 +1054,20 @@ export function AgendaPage() {
     return (
       <div onClick={e=>{e.stopPropagation();setSelectedId(a.id);}} onContextMenu={e=>handleCtxMenu(e,a.id)}
         style={{ position:'absolute', top, left:3, right:3, height:h, background:st.bg,
-          border:`1px solid ${sel?pr.color:st.border}`, borderLeft:`3px solid ${pr.color}`,
+          border:`1px solid ${sel?accentColor:st.border}`, borderLeft:`3px solid ${accentColor}`,
           borderRadius:6, padding:tall?'4px 7px':'2px 6px', cursor:'pointer',
-          boxShadow:sel?`0 0 0 2px ${pr.color}33,0 2px 8px rgba(0,0,0,.08)`:'0 1px 2px rgba(0,0,0,.05)',
+          boxShadow:sel?`0 0 0 2px ${accentColor}33,0 2px 8px rgba(0,0,0,.08)`:'0 1px 2px rgba(0,0,0,.05)',
           overflow:'hidden', zIndex:sel?2:1, transition:'box-shadow 0.12s', userSelect:'none' }}>
-        <div style={{ fontSize:10, fontWeight:600, color:pr.color, lineHeight:1.3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+        <div style={{ fontSize:10, fontWeight:600, color:accentColor, lineHeight:1.3, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {fmtTime(a.sh,a.sm)}{tall?` — ${fmtTime(a.eh,a.em)}`:''}
         </div>
         {tall && <div style={{ fontSize:11, fontWeight:600, color:'#191C1D', lineHeight:1.3, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.status==='bloqueado'?a.type:a.patient}</div>}
         {tall && h>=64 && <div style={{ fontSize:10, color:'#71717A', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.type}</div>}
         {tall && h>=80 && <span style={{ display:'inline-block', marginTop:3, fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:99, background:st.border, color:st.text }}>{st.label}</span>}
         {!tall && <div style={{ fontSize:10, color:'#374151', lineHeight:1.2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.status==='bloqueado'?a.type:a.patient}</div>}
+        {a.saleId && tall && h >= 48 && (
+          <div style={{ position:'absolute', bottom:3, right:5, width:7, height:7, borderRadius:'50%', background: a.saleStatus==='PAID'?'#16A34A':a.saleStatus==='PARTIAL'?'#D97706':'#A1A1AA', border:'1px solid rgba(255,255,255,0.8)' }} />
+        )}
       </div>
     );
   };
@@ -819,7 +1120,7 @@ export function AgendaPage() {
         <div style={{ display:'flex', minHeight:TOTAL_H }}>
           <TimeLabels />
           {visibleProfs.map(p=>(
-            <div key={p.id} onContextMenu={e=>handleCtxMenu(e,null)}
+            <div key={p.id} onContextMenu={e=>handleSlotCtxMenu(e, p.id, selectedDate)}
               style={{ flex:1, minWidth:0, borderRight:'1px solid #E5E7EB', position:'relative', minHeight:TOTAL_H }}>
               <TimeGridBg />
               {filteredData.filter(a=>a.profId===p.id).map(a=><ApptCard key={a.id} a={a} />)}
@@ -856,7 +1157,7 @@ export function AgendaPage() {
             {wdays.map((d,i)=>{
               const dayAppts = appointments.filter(a=>apptMatchesDate(a,d) && profChecked.has(a.profId));
               return (
-                <div key={i} onContextMenu={e=>handleCtxMenu(e,null)}
+                <div key={i} onContextMenu={e=>handleSlotCtxMenu(e, null, d)}
                   style={{ flex:1, minWidth:0, borderRight:'1px solid #E5E7EB', position:'relative', minHeight:TOTAL_H }}>
                   <TimeGridBg />
                   {dayAppts.map(a=>{
@@ -1010,121 +1311,443 @@ export function AgendaPage() {
   );
 
   // ── Detail Panel ──────────────────────────────────────────────────────────────
-  const DetailPanel = ({ a }:{ a:Appt }) => {
+  const DetailPanel = ({ a }: { a: Appt }) => {
     const st = STATUSES[a.status] || STATUSES.agendado;
     const pr = getProf(a.profId);
-    const dur = (a.eh*60+a.em)-(a.sh*60+a.sm);
-    const apptD = addDays(todayStart, a.dateOffset??0);
-    const ds = `${String(apptD.getDate()).padStart(2,'0')}/${String(apptD.getMonth()+1).padStart(2,'0')}/${apptD.getFullYear()}`;
+    const dur = (a.eh*60+a.em) - (a.sh*60+a.sm);
+    const apptD = addDays(todayStart, a.dateOffset ?? 0);
+    const ds = `${apptD.getDate()} de ${MONTHS_PT[apptD.getMonth()]}`;
 
-    const qa = [
-      { label:'Confirmar',  icon:'ti-check',         color:'#16A34A', status:'confirmado'  },
-      { label:'Chegou',     icon:'ti-door-enter',     color:'#7C3AED', status:'chegou'      },
-      { label:'Iniciar',    icon:'ti-player-play',    color:'#2563EB', status:'atendimento' },
-      { label:'Finalizar',  icon:'ti-player-stop',    color:'#15803D', status:'finalizado'  },
-      { label:'Faltou',     icon:'ti-user-x',         color:'#DC2626', status:'faltou'      },
-      { label:'Cancelar',   icon:'ti-x',              color:'#EF4444', status:'cancelado'   },
-      { label:'Reagendar',  icon:'ti-calendar-event', color:'#C2410C', status:'reagendado'  },
-      { label:'Ver paciente',icon:'ti-user',          color:'#1D4ED8', status:null          },
-    ];
+    const [cancelOpen, setCancelOpen]     = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
+    const [cancelSaving, setCancelSaving] = useState(false);
+
+    const [resOpen, setResOpen]               = useState(false);
+    const [resPlanId2, setResPlanId2]         = useState('');
+    const [resTotalAmt2, setResTotalAmt2]     = useState('');
+    const [resResAmt2, setResResAmt2]         = useState('');
+    const [resPayMtd2, setResPayMtd2]         = useState('');
+    const [resDate2, setResDate2]             = useState(() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; });
+    const [resNotes2, setResNotes2]           = useState('');
+    const [resSaving2, setResSaving2]         = useState(false);
+    const [resErr2, setResErr2]               = useState('');
+
+    const { data: plansForDet } = useQuery({ queryKey: ['plans'], queryFn: () => plansApi.list(), staleTime: 5*60_000, enabled: resOpen });
+    const { data: payMtdsForDet } = useQuery({ queryKey: ['financial-payment-methods'], queryFn: () => financialApi.paymentMethods(), staleTime: 5*60_000, enabled: resOpen });
+    const activeProcsDet = useMemo(() => ((plansForDet as any[]) || []).filter((p: any) => p.active !== false), [plansForDet]);
+
+    async function handleCreateReservation() {
+      setResErr2('');
+      if (!resTotalAmt2) { setResErr2('Informe o valor total.'); return; }
+      setResSaving2(true);
+      try {
+        const plan = activeProcsDet.find((p: any) => p.id === resPlanId2);
+        await agendaApi.createReservation(a.id, {
+          planId:            resPlanId2 || null,
+          planName:          plan?.name || 'Reserva de horário',
+          totalAmount:       parseFloat(resTotalAmt2.replace(',', '.')),
+          reservationAmount: parseFloat((resResAmt2 || '0').replace(',', '.')),
+          paymentMethodId:   resPayMtd2 || null,
+          paymentDate:       resDate2 || null,
+          notes:             resNotes2 || null,
+        });
+        queryClient.invalidateQueries({ queryKey: ['appointments', calYear, calMonth] });
+        setResOpen(false);
+      } catch (e: any) {
+        setResErr2(e?.response?.data?.message || 'Erro ao criar reserva. Tente novamente.');
+      } finally { setResSaving2(false); }
+    }
+
+    const [reagendarOpen, setReagendarOpen]   = useState(false);
+    const [reagDateStr, setReagDateStr]       = useState(() => {
+      const d = apptD;
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    });
+    const [reagStartTime, setReagStartTime]   = useState(fmtTime(a.sh, a.sm));
+    const [reagEndTime, setReagEndTime]       = useState(fmtTime(a.eh, a.em));
+    const [reagProfId, setReagProfId]         = useState(a.profId);
+    const [reagRoom, setReagRoom]             = useState(a.room);
+    const [reagSaving, setReagSaving]         = useState(false);
+    const [reagErr, setReagErr]               = useState('');
+
+    const history = useMemo(() => {
+      if (!a.patientId) return [];
+      return [...appointments]
+        .filter(h => h.patientId === a.patientId && h.id !== a.id)
+        .sort((x, y) => {
+          const xD = addDays(todayStart, x.dateOffset ?? 0);
+          const yD = addDays(todayStart, y.dateOffset ?? 0);
+          const diff = yD.getTime() - xD.getTime();
+          return diff !== 0 ? diff : (y.sh*60+y.sm) - (x.sh*60+x.sm);
+        })
+        .slice(0, 5);
+    }, [a.id, a.patientId, appointments]);
+
+    async function handleCancel() {
+      setCancelSaving(true);
+      try {
+        const isBlocked = blockedSlots.some(b => b.id === a.id);
+        if (isBlocked) {
+          setBlockedSlots(prev => { const n = prev.map(x => x.id===a.id ? {...x,status:'cancelado'} : x); saveBlocked(n); return n; });
+        } else {
+          const extra = cancelReason.trim() ? `\nCancelamento: ${cancelReason.trim()}` : '';
+          await agendaApi.update(a.id, {
+            status: 'CANCELADO',
+            ...(cancelReason.trim() ? { notes: (a.notes || '') + extra } : {}),
+          });
+          queryClient.invalidateQueries({ queryKey: ['appointments', calYear, calMonth] });
+        }
+        setCancelOpen(false);
+        setSelectedId(null);
+      } catch (e) { console.error('Erro ao cancelar', e); }
+      finally { setCancelSaving(false); }
+    }
+
+    async function handleReagendar() {
+      setReagErr('');
+      const [rsh, rsm] = reagStartTime.split(':').map(Number);
+      const [reh, rem] = reagEndTime.split(':').map(Number);
+      if (rsh*60+rsm >= reh*60+rem) { setReagErr('Hora início deve ser antes da hora fim.'); return; }
+      setReagSaving(true);
+      try {
+        await agendaApi.update(a.id, {
+          startTime: new Date(`${reagDateStr}T${reagStartTime}:00`).toISOString(),
+          endTime:   new Date(`${reagDateStr}T${reagEndTime}:00`).toISOString(),
+          professionalId: reagProfId || null,
+          room:      reagRoom || null,
+          status:    'AGUARDANDO',
+        });
+        queryClient.invalidateQueries({ queryKey: ['appointments', calYear, calMonth] });
+        setReagendarOpen(false);
+        setSelectedId(null);
+      } catch (e: any) {
+        setReagErr(e?.response?.data?.message || 'Erro ao reagendar. Tente novamente.');
+      } finally { setReagSaving(false); }
+    }
+
+    const inp: React.CSSProperties = { width: '100%', height: 34, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#FFFFFF', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
+    const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 500, color: '#71717A', display: 'block', marginBottom: 3 };
+    const activeRooms = useMemo(() => loadSettingsRooms().filter(r => r.active !== false), []);
 
     return (
-      <div style={{ width:520, flexShrink:0, background:'#FFFFFF', borderLeft:'1px solid #E5E7EB', overflowY:'auto', display:'flex', flexDirection:'column', animation:'slideRight 0.22s cubic-bezier(0.32,0.72,0,1)' }}>
-        <div style={{ padding:'16px 20px 14px', borderBottom:'1px solid #F1F5F9', flexShrink:0 }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-            <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.text }}>{st.label}</span>
-            <button onClick={()=>setSelectedId(null)} style={{ width:26, height:26, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className="ti ti-x" style={{ fontSize:13, color:'#71717A' }} />
+      <div style={{ width: 380, flexShrink: 0, background: '#FFFFFF', borderLeft: '1px solid #E5E7EB', overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'slideRight 0.22s cubic-bezier(0.32,0.72,0,1)' }}>
+
+        {/* Header */}
+        <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid #F1F5F9', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#09090B', lineHeight: 1.25, marginBottom: 6 }}>
+                {a.status === 'bloqueado' ? a.type : a.patient}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: st.bg, color: st.text, whiteSpace: 'nowrap' }}>{st.label}</span>
+                {a.status !== 'bloqueado' && a.type && (
+                  <span style={{ fontSize: 11, color: '#71717A' }}>{a.type}</span>
+                )}
+              </div>
+            </div>
+            <button onClick={() => setSelectedId(null)}
+              style={{ width: 28, height: 28, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <i className="ti ti-x" style={{ fontSize: 13, color: '#71717A' }} />
             </button>
           </div>
-          <div style={{ fontSize:16, fontWeight:700, color:'#191C1D' }}>{a.type}</div>
-          <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
-            <div style={{ width:8, height:8, borderRadius:'50%', background:pr.color }} />
-            <span style={{ fontSize:12, color:'#71717A' }}>{pr.name}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: pr.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: '#71717A' }}>{pr.name}</span>
+            {a.room && <><span style={{ fontSize: 11, color: '#D4D4D8' }}>·</span><span style={{ fontSize: 12, color: '#71717A' }}>{a.room}</span></>}
           </div>
         </div>
 
-        <div style={{ padding:'14px 20px', borderBottom:'1px solid #F1F5F9' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 16px' }}>
-            {[
-              { icon:'ti-user',     label:'Paciente', value:a.status==='bloqueado'?'—':a.patient },
-              { icon:'ti-calendar', label:'Data',     value:ds },
-              { icon:'ti-clock',    label:'Horário',  value:`${fmtTime(a.sh,a.sm)} — ${fmtTime(a.eh,a.em)}` },
-              { icon:'ti-timer',    label:'Duração',  value:`${dur} min` },
-              { icon:'ti-door',     label:'Sala',     value:a.room||'—' },
-              { icon:'ti-phone',    label:'Telefone', value:a.phone||'—' },
-              { icon:'ti-mail',     label:'E-mail',   value:a.email||'—' },
-            ].map(row=>(
-              <div key={row.label} style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
-                <div style={{ width:26, height:26, borderRadius:7, background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <i className={`ti ${row.icon}`} style={{ fontSize:12, color:'#71717A' }} />
+        {/* Quick actions */}
+        {a.status !== 'bloqueado' && (
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Ações</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <ActionBtn icon="ti-check" label="Confirmar" color="#16A34A" bg="#DCFCE7"
+                active={a.status === 'confirmado'} onClick={() => changeStatus(a.id, 'confirmado')} />
+              <ActionBtn icon="ti-door-enter" label="Chegou" color="#7C3AED" bg="#F3E8FF"
+                active={a.status === 'chegou'} onClick={() => changeStatus(a.id, 'chegou')} />
+              <ActionBtn icon="ti-player-play" label="Iniciar" color="#2563EB" bg="#EFF6FF"
+                active={a.status === 'atendimento'}
+                onClick={() => { changeStatus(a.id, 'atendimento'); if (a.patientId) navigate(`/prontuario/${a.patientId}`); }} />
+              <ActionBtn icon="ti-user-x" label="Faltou" color="#D97706" bg="#FFFBEB"
+                active={a.status === 'faltou'} onClick={() => changeStatus(a.id, 'faltou')} />
+              <ActionBtn icon="ti-ban" label="Cancelar" color="#DC2626" bg="#FEF2F2"
+                active={cancelOpen || a.status === 'cancelado'}
+                onClick={() => { setCancelOpen(o => !o); setReagendarOpen(false); }} />
+              <ActionBtn icon="ti-calendar-event" label="Reagendar" color="#7C3AED" bg="#F3E8FF"
+                active={reagendarOpen}
+                onClick={() => { setReagendarOpen(o => !o); setCancelOpen(false); }} />
+              {a.patientId && (
+                <ActionBtn icon="ti-user" label="Ver contato" color="#374151" bg="#F4F4F5"
+                  onClick={() => navigate(`/patients/${a.patientId}`)} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Cancel confirmation */}
+        {cancelOpen && (
+          <div style={{ margin: '8px 18px 0', padding: '12px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, flexShrink: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#DC2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className="ti ti-alert-circle" style={{ fontSize: 14 }} /> Confirmar cancelamento?
+            </div>
+            <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)}
+              placeholder="Motivo do cancelamento (opcional)" rows={2}
+              style={{ width: '100%', padding: '7px 10px', border: '1px solid #FECACA', borderRadius: 7, fontSize: 12, color: '#09090B', background: '#FFFFFF', resize: 'none', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button onClick={handleCancel} disabled={cancelSaving}
+                style={{ flex: 1, height: 32, border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: '#DC2626', cursor: cancelSaving ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: cancelSaving ? 0.7 : 1 }}>
+                {cancelSaving ? 'Cancelando...' : 'Sim, cancelar'}
+              </button>
+              <button onClick={() => setCancelOpen(false)}
+                style={{ flex: 1, height: 32, border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                Voltar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Reagendar form */}
+        {reagendarOpen && (
+          <div style={{ margin: '8px 18px 0', padding: '12px 14px', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, flexShrink: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#7C3AED', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <i className="ti ti-calendar-event" style={{ fontSize: 13 }} /> Reagendar atendimento
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div><label style={lbl}>Nova data</label>
+                <input type="date" value={reagDateStr} onChange={e => setReagDateStr(e.target.value)} style={inp} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div><label style={lbl}>Hora início</label>
+                  <input type="time" value={reagStartTime} onChange={e => setReagStartTime(e.target.value)} style={inp} />
                 </div>
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:10, color:'#9CA3AF', fontWeight:500 }}>{row.label}</div>
-                  <div style={{ fontSize:12, color:'#191C1D', fontWeight:500, marginTop:1, wordBreak:'break-all' }}>{row.value}</div>
+                <div><label style={lbl}>Hora fim</label>
+                  <input type="time" value={reagEndTime} onChange={e => setReagEndTime(e.target.value)} style={inp} />
+                </div>
+              </div>
+              <div><label style={lbl}>Profissional</label>
+                <select value={reagProfId} onChange={e => setReagProfId(e.target.value)} style={inp}>
+                  <option value="">— Sem profissional —</option>
+                  {profs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div><label style={lbl}>Sala</label>
+                {activeRooms.length > 0 ? (
+                  <select value={reagRoom} onChange={e => setReagRoom(e.target.value)} style={inp}>
+                    <option value="">— Sem sala —</option>
+                    {activeRooms.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                  </select>
+                ) : (
+                  <input value={reagRoom} onChange={e => setReagRoom(e.target.value)}
+                    placeholder="Nome da sala (opcional)" style={inp} />
+                )}
+              </div>
+              {reagErr && <p style={{ fontSize: 11, color: '#DC2626', margin: 0 }}>{reagErr}</p>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={handleReagendar} disabled={reagSaving}
+                  style={{ flex: 1, height: 32, border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: '#7C3AED', cursor: reagSaving ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: reagSaving ? 0.7 : 1 }}>
+                  {reagSaving ? 'Salvando...' : 'Confirmar'}
+                </button>
+                <button onClick={() => setReagendarOpen(false)}
+                  style={{ height: 32, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Data block */}
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 14px' }}>
+            {[
+              { icon: 'ti-calendar', label: 'Data',     value: ds },
+              { icon: 'ti-clock',    label: 'Horário',  value: `${fmtTime(a.sh,a.sm)} – ${fmtTime(a.eh,a.em)}` },
+              { icon: 'ti-timer',    label: 'Duração',  value: `${dur} min` },
+              ...(a.room ? [{ icon: 'ti-door', label: 'Sala', value: a.room }] : []),
+            ].map(row => (
+              <div key={row.label} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ width: 26, height: 26, borderRadius: 7, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className={`ti ${row.icon}`} style={{ fontSize: 12, color: '#71717A' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500 }}>{row.label}</div>
+                  <div style={{ fontSize: 12, color: '#191C1D', fontWeight: 500, marginTop: 1 }}>{row.value}</div>
                 </div>
               </div>
             ))}
           </div>
+          {a.phone && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
+              <div style={{ width: 26, height: 26, borderRadius: 7, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ti ti-brand-whatsapp" style={{ fontSize: 12, color: '#16A34A' }} />
+              </div>
+              <a href={`https://wa.me/55${a.phone.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: '#16A34A', fontWeight: 500, textDecoration: 'none' }}>
+                {a.phone}
+              </a>
+            </div>
+          )}
           {a.notes && (
-            <div style={{ marginTop:10, padding:'8px 10px', background:'#F9F9F9', borderRadius:8, border:'1px solid #F1F5F9' }}>
-              <div style={{ fontSize:10, color:'#9CA3AF', fontWeight:500, marginBottom:4 }}>Observações</div>
-              <div style={{ fontSize:12, color:'#374151', lineHeight:1.5 }}>{a.notes}</div>
+            <div style={{ marginTop: 10, padding: '8px 10px', background: '#F9F9F9', borderRadius: 8, border: '1px solid #F1F5F9' }}>
+              <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 500, marginBottom: 3 }}>Observações</div>
+              <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>{a.notes}</div>
             </div>
           )}
         </div>
 
-        <div style={{ padding:'12px 20px', borderBottom:'1px solid #F1F5F9' }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:8 }}>Ações rápidas</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
-            {qa.map(q=>(
-              <button key={q.label} onClick={()=>{ if(q.status) changeStatus(a.id, q.status); }}
-                style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'8px 4px', border:`1px solid ${a.status===q.status?q.color+'60':'#E4E4E7'}`, borderRadius:8, background:a.status===q.status?q.color+'10':'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}
-                onMouseEnter={e=>{ (e.currentTarget as HTMLElement).style.background='#F8F9FA'; }}
-                onMouseLeave={e=>{ (e.currentTarget as HTMLElement).style.background=a.status===q.status?q.color+'10':'#FFFFFF'; }}>
-                <i className={`ti ${q.icon}`} style={{ fontSize:14, color:q.color }} />
-                <span style={{ fontSize:9, color:'#374151', fontWeight:500, textAlign:'center', lineHeight:1.2 }}>{q.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Financial block */}
+        {a.status !== 'bloqueado' && (
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Financeiro</div>
 
-        <div style={{ padding:'12px 20px', flex:1 }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Histórico recente</div>
-          {[
-            { date:'20/05/2026', type:'Consulta inicial', status:'finalizado' },
-            { date:'13/05/2026', type:'Bioimpedância',    status:'finalizado' },
-            { date:'06/05/2026', type:'Enfermagem',       status:'faltou'     },
-          ].map((h,i)=>{
-            const hs=STATUSES[h.status];
-            return (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:i<2?'1px solid #F1F5F9':'none' }}>
-                <div style={{ width:8, height:8, borderRadius:'50%', background:hs?.dot||'#9CA3AF', flexShrink:0 }} />
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:12, color:'#191C1D', fontWeight:500 }}>{h.type}</div>
-                  <div style={{ fontSize:10, color:'#9CA3AF' }}>{h.date}</div>
+            {a.saleId ? (
+              <div style={{ padding: '10px 12px', background: '#F9F9F9', borderRadius: 10, border: '1px solid #E4E4E7' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                    background: a.saleStatus==='PAID' ? '#DCFCE7' : a.saleStatus==='PARTIAL' ? '#FFFBEB' : '#F4F4F5',
+                    color:      a.saleStatus==='PAID' ? '#16A34A' : a.saleStatus==='PARTIAL' ? '#D97706' : '#71717A' }}>
+                    {a.saleStatus==='PAID' ? 'Pago' : a.saleStatus==='PARTIAL' ? 'Parcialmente pago' : 'Pendente'}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#09090B' }}>
+                    R$ {(a.saleTotal || 0).toFixed(2)}
+                  </span>
                 </div>
-                <span style={{ fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:99, background:hs?.bg, color:hs?.text }}>{hs?.label}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF' }}>Pago</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#16A34A' }}>R$ {(a.salePaidAmount || 0).toFixed(2)}</div>
+                  </div>
+                  {(a.saleTotal || 0) - (a.salePaidAmount || 0) > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF' }}>Saldo</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#D97706' }}>R$ {((a.saleTotal || 0) - (a.salePaidAmount || 0)).toFixed(2)}</div>
+                    </div>
+                  )}
+                </div>
+                {a.status === 'cancelado' && (
+                  <div style={{ padding: '6px 8px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 6, fontSize: 11, color: '#DC2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <i className="ti ti-alert-triangle" style={{ fontSize: 11 }} />
+                    Agendamento cancelado — verifique o estorno da reserva.
+                  </div>
+                )}
+                <a href="/financial" style={{ fontSize: 11, color: '#2563EB', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <i className="ti ti-external-link" style={{ fontSize: 11 }} /> Abrir no financeiro
+                </a>
               </div>
-            );
-          })}
-          <div style={{ marginTop:10, display:'flex', gap:6 }}>
-            {a.patientId && (
-              <button onClick={()=>navigate(`/patients/${a.patientId}`)} style={{ flex:1, padding:'8px 0', border:'1px solid #E4E4E7', borderRadius:8, background:'transparent', fontSize:12, color:'#374151', fontWeight:500, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}
-                onMouseEnter={e=>{ (e.currentTarget as HTMLElement).style.background='#F4F4F5'; }}
-                onMouseLeave={e=>{ (e.currentTarget as HTMLElement).style.background='transparent'; }}>
-                <i className="ti ti-user" style={{ fontSize:12 }} /> Ver contato
-              </button>
-            )}
-            {a.patientId && (
-              <button onClick={()=>navigate(`/prontuario/${a.patientId}`)} style={{ flex:1, padding:'8px 0', border:'1px solid #000', borderRadius:8, background:'#000', fontSize:12, color:'#FFF', fontWeight:600, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}
-                onMouseEnter={e=>{ (e.currentTarget as HTMLElement).style.background='#222'; }}
-                onMouseLeave={e=>{ (e.currentTarget as HTMLElement).style.background='#000'; }}>
-                <i className="ti ti-notes-medical" style={{ fontSize:12 }} /> Prontuário
-              </button>
+            ) : (
+              <>
+                <button onClick={() => setResOpen(o => !o)}
+                  style={{ width: '100%', height: 34, border: `1px solid ${resOpen ? '#000' : '#E4E4E7'}`, borderRadius: 8, fontSize: 12, fontWeight: 500, color: resOpen ? '#09090B' : '#71717A', background: resOpen ? '#FAFAFA' : '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px' }}>
+                  <i className={`ti ${resOpen ? 'ti-chevron-down' : 'ti-plus'}`} style={{ fontSize: 12 }} />
+                  Lançar reserva financeira
+                </button>
+
+                {resOpen && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div>
+                      <label style={lbl}>Procedimento</label>
+                      <select value={resPlanId2} onChange={e => {
+                        setResPlanId2(e.target.value);
+                        const p = activeProcsDet.find((x: any) => x.id === e.target.value);
+                        if (p?.price) setResTotalAmt2(String(p.price));
+                      }} style={inp}>
+                        <option value="">— Selecionar —</option>
+                        {activeProcsDet.map((p: any) => (
+                          <option key={p.id} value={p.id}>{p.name}{p.price ? ` — R$ ${Number(p.price).toFixed(2)}` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label style={lbl}>Valor total *</label>
+                        <input value={resTotalAmt2} onChange={e=>setResTotalAmt2(e.target.value)} placeholder="0,00" style={inp} />
+                      </div>
+                      <div>
+                        <label style={lbl}>Entrada</label>
+                        <input value={resResAmt2} onChange={e=>setResResAmt2(e.target.value)} placeholder="0,00" style={inp} />
+                      </div>
+                    </div>
+                    <div>
+                      <label style={lbl}>Forma de pagamento</label>
+                      <select value={resPayMtd2} onChange={e=>setResPayMtd2(e.target.value)} style={inp}>
+                        <option value="">— Selecionar —</option>
+                        {((payMtdsForDet as any[]) || []).filter((m: any) => m.active !== false).map((m: any) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={lbl}>Data pagamento</label>
+                      <input type="date" value={resDate2} onChange={e=>setResDate2(e.target.value)} style={inp} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Observações</label>
+                      <input value={resNotes2} onChange={e=>setResNotes2(e.target.value)} placeholder="Opcional" style={inp} />
+                    </div>
+                    {resErr2 && <p style={{ fontSize: 11, color: '#DC2626', margin: 0 }}>{resErr2}</p>}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={handleCreateReservation} disabled={resSaving2}
+                        style={{ flex: 1, height: 32, border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: '#000000', cursor: resSaving2 ? 'wait' : 'pointer', fontFamily: 'inherit', opacity: resSaving2 ? 0.7 : 1 }}>
+                        {resSaving2 ? 'Salvando...' : 'Salvar reserva'}
+                      </button>
+                      <button onClick={() => setResOpen(false)}
+                        style={{ height: 32, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 12, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
-        </div>
+        )}
+
+        {/* Recent history */}
+        {a.status !== 'bloqueado' && a.patientId && (
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Histórico recente</div>
+            {history.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#A1A1AA', fontStyle: 'italic' }}>Nenhum atendimento anterior no período.</div>
+            ) : history.map((h, i) => {
+              const hst = STATUSES[h.status] || STATUSES.agendado;
+              const hd = addDays(todayStart, h.dateOffset ?? 0);
+              const hds = `${String(hd.getDate()).padStart(2,'0')}/${String(hd.getMonth()+1).padStart(2,'0')}`;
+              return (
+                <div key={h.id} onClick={() => setSelectedId(h.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < history.length-1 ? '1px solid #F4F4F5' : 'none', cursor: 'pointer', borderRadius: 6 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: hst.dot, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: '#191C1D', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.type}</div>
+                    <div style={{ fontSize: 10, color: '#9CA3AF' }}>{hds} · {fmtTime(h.sh,h.sm)}</div>
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: hst.bg, color: hst.text, whiteSpace: 'nowrap', flexShrink: 0 }}>{hst.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer */}
+        {a.status !== 'bloqueado' && a.patientId && (
+          <div style={{ padding: '12px 18px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: 6, marginTop: 'auto' }}>
+            <button onClick={() => navigate(`/patients/${a.patientId}`)}
+              style={{ flex: 1, height: 34, border: '1px solid #E4E4E7', borderRadius: 8, background: '#FFFFFF', fontSize: 12, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#FFFFFF')}>
+              <i className="ti ti-user" style={{ fontSize: 12 }} /> Ver contato
+            </button>
+            <button onClick={() => navigate(`/prontuario/${a.patientId}`)}
+              style={{ flex: 1, height: 34, border: '1px solid #000', borderRadius: 8, background: '#000', fontSize: 12, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#222')}
+              onMouseLeave={e => (e.currentTarget.style.background = '#000')}>
+              <i className="ti ti-notes-medical" style={{ fontSize: 12 }} /> Prontuário
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1139,85 +1762,193 @@ export function AgendaPage() {
         .ctx-menu{animation:fadeInScale .12s ease}
       `}</style>
 
-      {showNovoModal && <NovoAgendamentoModal onClose={()=>setShowNovoModal(false)} defaultDate={selectedDate} onSave={handleCreateAppt} modalProfs={profs} />}
+      {showNovoModal && <NovoAgendamentoModal onClose={()=>{ setShowNovoModal(false); setNovoModalInitial(undefined); }} defaultDate={selectedDate} onSave={handleCreateAppt} modalProfs={profs} initialValues={novoModalInitial} />}
       {showBloquearModal && <BloquearHorarioModal onClose={()=>setShowBloquearModal(false)} defaultDate={selectedDate} todayStart={todayStart} onSave={addBlocked} profs={profs} />}
 
-      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'#F8F9FA', fontFamily:"'Inter', system-ui, sans-serif" }}>
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'transparent', fontFamily:"'Inter', system-ui, sans-serif" }}>
 
-        {/* Header */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'18px 28px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div>
-            <h1 style={{ fontSize:20, fontWeight:700, color:'#191C1D', margin:0 }}>Agenda</h1>
-            <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>Gerencie atendimentos por dia, semana, mês, profissional e sala.</p>
-          </div>
-          <div style={{ display:'flex', gap:8 }}>
-            <button onClick={()=>setShowBloquearModal(true)}
-              style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:12, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
-              <i className="ti ti-lock" style={{ fontSize:13 }} /> Bloquear horário
-            </button>
-            <button onClick={()=>navigate('/settings')}
-              style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:12, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
-              <i className="ti ti-settings" style={{ fontSize:13 }} /> Configurações
-            </button>
-            <button onClick={()=>setShowNovoModal(true)}
-              style={{ height:36, padding:'0 16px', background:'#000000', border:'none', borderRadius:10, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
-              <i className="ti ti-plus" style={{ fontSize:14 }} /> Novo agendamento
-            </button>
-          </div>
-        </div>
+        {/* Controls bar — single row */}
+        <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E5E7EB', padding: '0 20px', display: 'flex', alignItems: 'center', gap: 6, height: 52 }}>
 
-        {/* Controls bar */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'8px 28px', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <button onClick={goToday} style={{ height:32, padding:'0 14px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:12, fontWeight:500, color:'#374151', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>Hoje</button>
-            <button onClick={()=>navigate_date(-1)} style={{ width:28, height:28, border:'1px solid #E4E4E7', borderRadius:7, background:'#FFFFFF', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
-              <i className="ti ti-chevron-left" style={{ fontSize:13, color:'#71717A' }} />
+          {/* Navigation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <button onClick={goToday}
+              style={{ height: 32, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 99, fontSize: 12, fontWeight: 500, color: '#18181B', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              Hoje
             </button>
-            <button onClick={()=>navigate_date(1)} style={{ width:28, height:28, border:'1px solid #E4E4E7', borderRadius:7, background:'#FFFFFF', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
-              <i className="ti ti-chevron-right" style={{ fontSize:13, color:'#71717A' }} />
+            <button onClick={()=>navigate_date(-1)}
+              style={{ width: 30, height: 30, border: '1px solid #E4E4E7', borderRadius: 99, background: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <i className="ti ti-chevron-left" style={{ fontSize: 12, color: '#71717A' }} />
+            </button>
+            <button onClick={()=>navigate_date(1)}
+              style={{ width: 30, height: 30, border: '1px solid #E4E4E7', borderRadius: 99, background: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <i className="ti ti-chevron-right" style={{ fontSize: 12, color: '#71717A' }} />
             </button>
           </div>
-          <div>
-            <div style={{ fontSize:14, fontWeight:700, color:'#191C1D', lineHeight:1 }}>
+
+          {/* Date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', flexShrink: 0, marginLeft: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#191C1D' }}>
               {view==='month' ? `${MONTHS_PT[calMonth]} de ${calYear}` : formatTitle(selectedDate)}
-            </div>
-            <div style={{ fontSize:11, color:'#71717A', marginTop:1 }}>
+            </span>
+            <span style={{ fontSize: 11, color: '#D4D4D8' }}>·</span>
+            <span style={{ fontSize: 11, color: '#9CA3AF' }}>
               {view==='month' ? `${calCells.filter(Boolean).length} dias` : formatDayLabel(selectedDate)}
-            </div>
+            </span>
           </div>
-          <div style={{ flex:1 }} />
-          <div style={{ display:'flex', background:'#F4F4F5', borderRadius:8, padding:2, gap:1 }}>
-            {(['day','week','month','list'] as const).map(v=>{
-              const labels={day:'Dia',week:'Semana',month:'Mês',list:'Lista'};
-              const act=view===v;
-              return <button key={v} onClick={()=>setView(v)} style={{ height:28, padding:'0 12px', borderRadius:6, border:'none', fontSize:12, fontWeight:act?600:400, color:act?'#191C1D':'#71717A', background:act?'#FFFFFF':'transparent', cursor:'pointer', fontFamily:'inherit', boxShadow:act?'0 1px 3px rgba(0,0,0,.1)':'none' }}>{labels[v]}</button>;
-            })}
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:12, color:'#71717A' }}>Agrupar por</span>
-            <select value={groupBy} onChange={e=>setGroupBy(e.target.value as 'professional'|'room')}
-              style={{ height:30, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:12, color:'#374151', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>
-              <option value="professional">Profissional</option>
-              <option value="room">Sala</option>
-            </select>
-          </div>
-          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
-            style={{ height:30, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:12, color:'#374151', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>
-            <option value="">Todos os status</option>
-            {Object.entries(STATUSES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}
-            style={{ height:30, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:12, color:'#374151', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>
-            <option value="">Todos os tipos</option>
-            {TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-          </select>
-          {(statusFilter||typeFilter||roomFilter) && (
-            <button onClick={()=>{setStatusFilter('');setTypeFilter('');setRoomFilter('');}}
-              style={{ fontSize:12, color:'#71717A', background:'none', border:'none', cursor:'pointer', fontFamily:'inherit' }}>
-              Limpar filtros
+
+          <div style={{ flex: 1 }} />
+
+          {/* View dropdown */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button ref={viewBtnRef}
+              onClick={e => { e.stopPropagation(); setShowViewDropdown(o => !o); setShowFiltersDropdown(false); }}
+              style={{ height: 32, padding: '0 10px', border: `1px solid ${showViewDropdown ? '#A1A1AA' : '#E4E4E7'}`, borderRadius: 99, fontSize: 12, fontWeight: 500, color: '#18181B', background: showViewDropdown ? '#F4F4F5' : '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              {VIEW_LABELS[view]}
+              <i className="ti ti-chevron-down" style={{ fontSize: 10, color: '#9CA3AF' }} />
             </button>
-          )}
+          </div>
+
+          {/* Group by */}
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value as 'professional'|'room')} title="Agrupar agenda por"
+            style={{ height: 32, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 99, fontSize: 12, color: '#18181B', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, outline: 'none' }}>
+            <option value="professional">Profissional</option>
+            <option value="room">Sala</option>
+          </select>
+
+          {/* Filters */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button ref={filtersBtnRef}
+              onClick={e => { e.stopPropagation(); setShowFiltersDropdown(o => !o); setShowViewDropdown(false); }}
+              style={{ height: 32, padding: '0 10px', border: `1px solid ${filterCount > 0 ? '#18181B' : showFiltersDropdown ? '#A1A1AA' : '#E4E4E7'}`, borderRadius: 99, fontSize: 12, fontWeight: 500, color: '#18181B', background: showFiltersDropdown ? '#F4F4F5' : '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              <i className="ti ti-adjustments-horizontal" style={{ fontSize: 13, color: filterCount > 0 ? '#18181B' : '#71717A' }} />
+              Filtros
+              {filterCount > 0 && (
+                <span style={{ width: 16, height: 16, borderRadius: '50%', background: '#18181B', color: '#FFF', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{filterCount}</span>
+              )}
+            </button>
+          </div>
+
+          {/* Legend icon */}
+          <button ref={legendBtnRef} onClick={() => setShowLegend(v => !v)} title="Legenda dos status"
+            style={{ width: 32, height: 32, border: `1px solid ${showLegend ? '#A1A1AA' : '#E4E4E7'}`, borderRadius: 99, background: showLegend ? '#F4F4F5' : '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'background 0.12s' }}
+            onMouseEnter={e => { if (!showLegend) (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
+            onMouseLeave={e => { if (!showLegend) (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
+            <i className="ti ti-info-circle" style={{ fontSize: 15, color: showLegend ? '#191C1D' : '#71717A' }} />
+          </button>
+
+          <div style={{ width: 1, height: 20, background: '#E4E4E7', flexShrink: 0 }} />
+
+          {/* Lock */}
+          <button onClick={() => setShowBloquearModal(true)} title="Bloquear horário"
+            style={{ height: 32, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 99, fontSize: 12, fontWeight: 500, color: '#18181B', background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#FFFFFF')}>
+            <i className="ti ti-lock" style={{ fontSize: 13, color: '#71717A' }} /> Bloquear
+          </button>
+
+          {/* Settings */}
+          <button onClick={() => navigate('/settings')} title="Configurações da agenda"
+            style={{ width: 32, height: 32, border: '1px solid #E4E4E7', borderRadius: 99, background: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'background 0.12s' }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#FFFFFF')}>
+            <i className="ti ti-settings" style={{ fontSize: 14, color: '#71717A' }} />
+          </button>
+
+          {/* New appointment */}
+          <button onClick={() => { setNovoModalInitial(undefined); setShowNovoModal(true); }}
+            style={{ height: 36, padding: '0 16px', background: '#000000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>
+            <i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo
+          </button>
+
         </div>
+
+        {/* View dropdown portal */}
+        {showViewDropdown && (() => {
+          const rect = viewBtnRef.current?.getBoundingClientRect();
+          if (!rect) return null;
+          return createPortal(
+            <>
+              <div onClick={() => setShowViewDropdown(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+              <div className="ctx-menu" style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, zIndex: 9999, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.1)', padding: '4px 0', minWidth: 150, fontFamily: "'Inter', system-ui, sans-serif" }}>
+                {(['day','week','month','list'] as const).map(v => (
+                  <div key={v} onClick={() => { setView(v); setShowViewDropdown(false); }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')}
+                    onMouseLeave={e => { (e.currentTarget.style.background = view === v ? '#F4F4F5' : 'transparent'); }}
+                    style={{ padding: '8px 14px', fontSize: 13, color: '#191C1D', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: view === v ? '#F4F4F5' : 'transparent' }}>
+                    <span style={{ flex: 1 }}>{VIEW_LABELS[v]}</span>
+                    {view === v && <i className="ti ti-check" style={{ fontSize: 12, color: '#16A34A' }} />}
+                  </div>
+                ))}
+              </div>
+            </>,
+            document.body
+          );
+        })()}
+
+        {/* Filters dropdown portal */}
+        {showFiltersDropdown && (() => {
+          const rect = filtersBtnRef.current?.getBoundingClientRect();
+          if (!rect) return null;
+          return createPortal(
+            <>
+              <div onClick={() => setShowFiltersDropdown(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+              <div onClick={e => e.stopPropagation()} className="ctx-menu" style={{ position: 'fixed', top: rect.bottom + 4, right: window.innerWidth - rect.right, zIndex: 9999, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,.13)', padding: '14px 16px', minWidth: 240, fontFamily: "'Inter', system-ui, sans-serif" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Filtros da agenda</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 500, color: '#71717A', display: 'block', marginBottom: 4 }}>Status</label>
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}>
+                      <option value="">Todos os status</option>
+                      {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 500, color: '#71717A', display: 'block', marginBottom: 4 }}>Tipo de atendimento</label>
+                    <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+                      style={{ width: '100%', height: 34, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}>
+                      <option value="">Todos os tipos</option>
+                      {((plansData as any[]) || []).filter((p: any) => p.isActive !== false).map((p: any) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {filterCount > 0 && (
+                  <button onClick={() => { setStatusFilter(''); setTypeFilter(''); setRoomFilter(''); }}
+                    style={{ marginTop: 12, width: '100%', height: 32, border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 12, fontWeight: 500, color: '#71717A', background: '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            </>,
+            document.body
+          );
+        })()}
+
+        {/* Legend portal */}
+        {showLegend && (() => {
+          const rect = legendBtnRef.current?.getBoundingClientRect();
+          if (!rect) return null;
+          return createPortal(
+            <>
+              <div onClick={() => setShowLegend(false)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+              <div style={{ position: 'fixed', top: rect.bottom + 6, right: window.innerWidth - rect.right, zIndex: 9999, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.13)', padding: '14px 16px', minWidth: 200, fontFamily: "'Inter', system-ui, sans-serif", animation: 'fadeUp 0.12s ease' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 10 }}>
+                  Legenda da agenda
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {Object.entries(STATUSES).map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', background: v.dot, flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: '#374151' }}>{v.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>,
+            document.body
+          );
+        })()}
 
         {/* Body */}
         <div style={{ flex:1, minHeight:0, display:'flex', overflow:'hidden' }}>
@@ -1288,27 +2019,15 @@ export function AgendaPage() {
             </div>
 
             {/* Salas */}
-            <div style={{ padding:'12px 12px 8px', borderBottom:'1px solid #F1F5F9' }}>
+            <div style={{ padding:'12px 12px 8px' }}>
               <div style={{ fontSize:10, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:8 }}>Salas</div>
-              {['Todas as salas',...ROOMS].map((s,i)=>(
+              {['Todas as salas', ...loadSettingsRooms().filter(r=>r.active!==false).map(r=>r.name)].map((s,i)=>(
                 <label key={s} style={{ display:'flex', alignItems:'center', gap:7, cursor:'pointer', marginBottom:6 }}>
                   <input type="checkbox" checked={i===0?roomFilter==='':roomFilter===s}
                     onChange={()=>setRoomFilter(i===0?'':(roomFilter===s?'':s))}
                     style={{ width:13, height:13, cursor:'pointer', accentColor:'#000000' }} />
                   <span style={{ fontSize:11, color:'#374151' }}>{s}</span>
                 </label>
-              ))}
-            </div>
-
-            {/* Legenda */}
-            <div style={{ padding:'12px 12px 8px' }}>
-              <div style={{ fontSize:10, fontWeight:700, color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:8 }}>Legenda</div>
-              {Object.entries(STATUSES).map(([k,v])=>(
-                <div key={k} onClick={()=>setStatusFilter(statusFilter===k?'':k)}
-                  style={{ display:'flex', alignItems:'center', gap:7, marginBottom:6, cursor:'pointer', padding:'2px 4px', borderRadius:5, background:statusFilter===k?'#F4F4F5':'transparent' }}>
-                  <div style={{ width:8, height:8, borderRadius:'50%', background:v.dot, flexShrink:0 }} />
-                  <span style={{ fontSize:11, color:statusFilter===k?'#191C1D':'#374151', fontWeight:statusFilter===k?600:400 }}>{v.label}</span>
-                </div>
               ))}
             </div>
           </div>
@@ -1401,11 +2120,33 @@ export function AgendaPage() {
               </>
             ) : (
               <>
+                {/* Slot info header */}
+                {ctxMenu.slotTime && (
+                  <div style={{ padding:'6px 14px 4px', fontSize:11, fontWeight:600, color:'#9CA3AF', borderBottom:'1px solid #F1F5F9', marginBottom:2 }}>
+                    {ctxMenu.slotDate
+                      ? `${ctxMenu.slotDate.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} · `
+                      : ''}{ctxMenu.slotTime}
+                    {ctxMenu.slotProfId && profs.find(p=>p.id===ctxMenu.slotProfId)
+                      ? ` · ${profs.find(p=>p.id===ctxMenu.slotProfId)!.short}`
+                      : ''}
+                  </div>
+                )}
                 {[
-                  { label:'Novo agendamento', icon:'ti-plus',          action:()=>{setShowNovoModal(true);setCtxMenu(null);} },
+                  {
+                    label:'Novo agendamento', icon:'ti-calendar-plus',
+                    action:()=>{
+                      setNovoModalInitial({
+                        date: ctxMenu.slotDate,
+                        startTime: ctxMenu.slotTime,
+                        profId: ctxMenu.slotProfId,
+                      });
+                      setShowNovoModal(true);
+                      setCtxMenu(null);
+                    },
+                  },
                   { label:'Bloquear horário', icon:'ti-lock',          action:()=>{setShowBloquearModal(true);setCtxMenu(null);} },
-                  { label:'Criar encaixe',    icon:'ti-bolt',          action:()=>{setShowNovoModal(true);setCtxMenu(null);} },
-                  { label:'Ver disponibilidade',icon:'ti-calendar-check',action:()=>setCtxMenu(null) },
+                  { label:'Criar lembrete',   icon:'ti-bell',          action:()=>setCtxMenu(null) },
+                  { label:'Criar evento',     icon:'ti-calendar-event',action:()=>setCtxMenu(null) },
                 ].map((item,i)=>(
                   <div key={i} onClick={item.action}
                     onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#F4F4F5'}

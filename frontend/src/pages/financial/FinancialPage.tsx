@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { salesApi, financialApi } from '../../services/api';
 import { NovaVendaModal } from '../../components/NovaVendaModal';
 import { TableActions } from '../../components/ui/TableActions';
@@ -1166,30 +1166,26 @@ function ContaContextMenu({ conta, onAction, onClose }: {
 }
 
 // ─── Tab: Vendas / Orçamentos ─────────────────────────────────────────────────
-const VENDA_TABS = [
-  { key:'todos',         label:'Todos' },
-  { key:'orcamentos',    label:'Orçamentos' },
-  { key:'vendas',        label:'Vendas' },
-  { key:'nao_recebidos', label:'Não recebidos' },
-  { key:'parcial',       label:'Parcial' },
-  { key:'pagos',         label:'Pagos' },
-  { key:'cancelados',    label:'Cancelados' },
-];
+const STATUS_SELECT_ICON = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`;
 
-function VendasTab({ sales, onReceber }: { sales: Sale[]; onReceber: (s: Sale) => void }) {
+function VendasTab({ sales }: { sales: Sale[] }) {
+  const qc        = useQueryClient();
   const { toast } = useToast();
   const navigate  = useNavigate();
   const ni        = () => toast('Funcionalidade ainda não implementada.', 'info');
-  const [tab,    setTab]    = useState('todos');
-  const [search, setSearch] = useState('');
+
+  const [statusFilter, setStatusFilter] = useState('todos');
+  const [search,       setSearch]       = useState('');
+  const [showNova,     setShowNova]     = useState(false);
+  const [receberSale,  setReceberSale]  = useState<Sale | null>(null);
 
   const filtered = sales.filter(s => {
-    if (tab === 'orcamentos')    return s.type === 'orcamento';
-    if (tab === 'vendas')        return s.type === 'venda';
-    if (tab === 'nao_recebidos') return s.status === 'nao_recebido';
-    if (tab === 'parcial')       return s.status === 'parcial';
-    if (tab === 'pagos')         return s.status === 'pago';
-    if (tab === 'cancelados')    return s.status === 'cancelado';
+    if (statusFilter === 'orcamentos')    return s.type === 'orcamento';
+    if (statusFilter === 'vendas')        return s.type === 'venda';
+    if (statusFilter === 'nao_recebidos') return s.status === 'nao_recebido';
+    if (statusFilter === 'parcial')       return s.status === 'parcial';
+    if (statusFilter === 'pagos')         return s.status === 'pago';
+    if (statusFilter === 'cancelados')    return s.status === 'cancelado';
     return true;
   }).filter(s => !search || s.patient.toLowerCase().includes(search.toLowerCase()) || s.item.toLowerCase().includes(search.toLowerCase()));
 
@@ -1206,44 +1202,57 @@ function VendasTab({ sales, onReceber }: { sales: Sale[]; onReceber: (s: Sale) =
   ];
 
   return (
-    <div style={{ padding:'24px 40px', display:'flex', flexDirection:'column', gap:20 }}>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16 }}>
+    <div style={{ padding:'16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
+
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
         {kpis.map(k => (
-          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'20px 24px', display:'flex', alignItems:'center', gap:16 }}>
-            <div style={{ width:48, height:48, borderRadius:12, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className={`ti ${k.icon}`} style={{ fontSize:22, color:k.iconColor }} />
+          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ width:40, height:40, borderRadius:10, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <i className={`ti ${k.icon}`} style={{ fontSize:18, color:k.iconColor }} />
             </div>
-            <div>
-              <div style={{ fontSize:12, color:'#71717A', fontWeight:500, marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>{k.label}</div>
-              <div style={{ fontSize:22, fontWeight:700, color:'#09090B', lineHeight:1.1 }}>{k.value}</div>
-              <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{k.sub}</div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{k.label}</div>
+              <div style={{ fontSize:18, fontWeight:700, color:'#09090B', lineHeight:1.15 }}>{k.value}</div>
+              <div style={{ fontSize:11, color:'#A1A1AA', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-        <div style={{ display:'flex', background:'#F4F4F5', borderRadius:10, padding:3 }}>
-          {VENDA_TABS.map(t => {
-            const active = tab === t.key;
-            return (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{ height:32, padding:'0 12px', borderRadius:8, border:'none', fontSize:12, fontWeight:active?600:400, color:active?'#09090B':'#71717A', background:active?'#FFFFFF':'transparent', cursor:'pointer', fontFamily:'inherit', boxShadow:active?'0 1px 3px rgba(0,0,0,.08)':'none', whiteSpace:'nowrap' }}>
-                {t.label}
-              </button>
-            );
-          })}
+      {/* Filtros + busca + Nova venda */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, height:36, padding:'0 12px', border:'1px solid #E4E4E7', borderRadius:99, background:'#FFFFFF', flex:'1 1 220px', maxWidth:300 }}>
+          <i className="ti ti-search" style={{ fontSize:13, color:'#A1A1AA', flexShrink:0 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar contato, telefone ou venda..."
+            style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, height:34, padding:'0 10px', border:'1px solid #E4E4E7', borderRadius:8, background:'#FFFFFF', width:250 }}>
-          <i className="ti ti-search" style={{ fontSize:13, color:'#A1A1AA' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar paciente, item..." style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
-        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          style={{ height:36, padding:'0 32px 0 14px', border:'1px solid #E4E4E7', borderRadius:99, fontSize:12, fontWeight:500, color:'#18181B', background:'#FFFFFF', cursor:'pointer', outline:'none', fontFamily:'inherit', flexShrink:0, appearance:'none', backgroundImage:STATUS_SELECT_ICON, backgroundRepeat:'no-repeat', backgroundPosition:'right 10px center' }}>
+          <option value="todos">Todos os status</option>
+          <option value="orcamentos">Orçamentos</option>
+          <option value="vendas">Vendas</option>
+          <option value="nao_recebidos">Não recebidos</option>
+          <option value="parcial">Parcial</option>
+          <option value="pagos">Pagos</option>
+          <option value="cancelados">Cancelados</option>
+        </select>
+        <div style={{ flex:1 }} />
+        <button onClick={() => setShowNova(true)}
+          style={{ height:36, padding:'0 16px', background:'#000000', border:'none', borderRadius:99, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit', flexShrink:0 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#18181B'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#000000'; }}>
+          <i className="ti ti-plus" style={{ fontSize:14 }} /> Nova venda
+        </button>
       </div>
 
+      {/* Tabela */}
       <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', overflow:'hidden' }}>
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ background:'#F4F4F5', borderBottom:'1px solid #E4E4E7' }}>
-              {['Data','Paciente','Item','Valor total','Recebido','Em aberto','Tipo','Status','Ações'].map((h, i) => (
+              {['Data','Contato','Procedimento','Total','Recebido','Saldo','Tipo','Status','Ações'].map((h, i) => (
                 <th key={h} style={{ padding:'10px 16px', textAlign:(i>=3&&i<=5)?'right':i===8?'right':'left', fontSize:11, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -1277,13 +1286,13 @@ function VendasTab({ sales, onReceber }: { sales: Sale[]; onReceber: (s: Sale) =
                   <td style={{ padding:'12px 16px' }}>
                     <TableActions
                       primaryAction={s.open > 0
-                        ? { label: 'Receber', icon: 'ti-cash', variant: 'success', onClick: () => onReceber(s) }
+                        ? { label: 'Receber', icon: 'ti-cash', variant: 'success', onClick: () => setReceberSale(s) }
                         : { label: 'Ver', icon: 'ti-eye', variant: 'default', onClick: ni }
                       }
                       secondaryActions={[
                         { label: 'Ver detalhes', icon: 'ti-eye', onClick: ni },
                         { label: 'Editar venda', icon: 'ti-pencil', onClick: ni },
-                        { label: 'Abrir paciente', icon: 'ti-user', onClick: () => s.patientId ? navigate(`/patients/${s.patientId}`) : ni() },
+                        { label: 'Abrir contato', icon: 'ti-user', onClick: () => s.patientId ? navigate(`/patients/${s.patientId}`) : ni() },
                         { label: 'Ver sessões', icon: 'ti-activity', onClick: ni },
                         { label: 'Gerar contrato', icon: 'ti-file-text', onClick: ni },
                         { label: 'Cancelar venda', icon: 'ti-x', variant: 'danger', onClick: ni, separator: true },
@@ -1303,6 +1312,19 @@ function VendasTab({ sales, onReceber }: { sales: Sale[]; onReceber: (s: Sale) =
           <div style={{ fontSize:12, color:'#71717A' }}>Página 1 de 1</div>
         </div>
       </div>
+
+      {showNova && (
+        <NovaVendaModal
+          onClose={() => setShowNova(false)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ['all-sales'] });
+            qc.invalidateQueries({ queryKey: ['transactions'] });
+            qc.invalidateQueries({ queryKey: ['financial-summary'] });
+            setShowNova(false);
+          }}
+        />
+      )}
+      {receberSale && <ReceberPanel sale={receberSale} onClose={() => setReceberSale(null)} />}
     </div>
   );
 }
@@ -1487,9 +1509,21 @@ function ContasTab() {
   const [tab,              setTab]              = useState('todas');
   const [search,           setSearch]           = useState('');
   const [saldoInicial,     setSaldoInicial]     = useState('0');
+  const [novaPanel,        setNovaPanel]        = useState<'receita' | 'despesa' | null>(null);
   const [selected,         setSelected]         = useState<Set<string>>(new Set());
   const [bulkConferirOpen, setBulkConferirOpen] = useState(false);
   const [bulkDivOpen,      setBulkDivOpen]      = useState(false);
+  const [filterOpen,       setFilterOpen]       = useState(false);
+  const filterWrapRef                           = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (filterWrapRef.current && !filterWrapRef.current.contains(e.target as Node)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [filterOpen]);
 
   const [detalhe,           setDetalhe]           = useState<Conta | null>(null);
   const [pagarReceberConta, setPagarReceberConta] = useState<Conta | null>(null);
@@ -1577,52 +1611,101 @@ function ContasTab() {
     else if (action === 'ver_venda')           setDetalhe(conta);
   };
 
-  return (
-    <div style={{ padding:'24px 40px', display:'flex', flexDirection:'column', gap:20 }}>
+  const activeFilterLabel = CONTA_FILTER_TABS.find(t => t.key === tab)?.label || 'Todos';
 
-      {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16 }}>
+  return (
+    <div style={{ padding:'16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
+
+      {/* KPIs + Saldo na mesma linha */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12 }}>
+        {/* Card saldo inicial (editável) */}
+        <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', flexDirection:'column', gap:4 }}>
+          <div style={{ fontSize:11, color:'#71717A', fontWeight:500, textTransform:'uppercase', letterSpacing:'.04em' }}>Saldo inicial</div>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ fontSize:13, color:'#A1A1AA', fontWeight:500 }}>R$</span>
+            <input type="number" value={saldoInicial} onChange={e => setSaldoInicial(e.target.value)} step={0.01}
+              style={{ border:'none', background:'transparent', fontSize:18, fontWeight:700, color:'#09090B', outline:'none', width:'100%', fontFamily:'inherit', padding:0, minWidth:0 }} />
+          </div>
+          <div style={{ fontSize:11, color:'#A1A1AA' }}>base para o saldo</div>
+        </div>
+
+        {/* KPI cards normais */}
         {kpis.map(k => (
-          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'20px 24px', display:'flex', alignItems:'center', gap:16 }}>
-            <div style={{ width:48, height:48, borderRadius:12, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className={`ti ${k.icon}`} style={{ fontSize:22, color:k.iconColor }} />
+          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ width:36, height:36, borderRadius:9, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <i className={`ti ${k.icon}`} style={{ fontSize:16, color:k.iconColor }} />
             </div>
-            <div>
-              <div style={{ fontSize:12, color:'#71717A', fontWeight:500, marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>{k.label}</div>
-              <div style={{ fontSize:22, fontWeight:700, color:'#09090B', lineHeight:1.1 }}>{k.value}</div>
-              <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{k.sub}</div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{k.label}</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#09090B', lineHeight:1.2 }}>{k.value}</div>
+              <div style={{ fontSize:11, color:'#A1A1AA', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
             </div>
           </div>
         ))}
+
+        {/* Card saldo atual */}
+        <div style={{ background:'#F0FDF4', borderRadius:12, border:'1px solid #BBF7D0', padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:36, height:36, borderRadius:9, background:'#DCFCE7', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <i className="ti ti-wallet" style={{ fontSize:16, color:'#16A34A' }} />
+          </div>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:11, color:'#15803D', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Saldo atual</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#15803D', lineHeight:1.2 }}>{fmt(saldoMap.total)}</div>
+            <div style={{ fontSize:11, color:'#86EFAC', whiteSpace:'nowrap' }}>calculado</div>
+          </div>
+        </div>
       </div>
 
-      {/* Filtros */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-        <div style={{ display:'flex', background:'#F4F4F5', borderRadius:10, padding:3, overflowX:'auto', scrollbarWidth:'none', flexShrink:0 }}>
-          {CONTA_FILTER_TABS.map(t => {
-            const active = tab === t.key;
-            return (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{ height:32, padding:'0 11px', borderRadius:8, border:'none', fontSize:12, fontWeight:active?600:400, color:active?'#09090B':'#71717A', background:active?'#FFFFFF':'transparent', cursor:'pointer', fontFamily:'inherit', boxShadow:active?'0 1px 3px rgba(0,0,0,.08)':'none', whiteSpace:'nowrap', flexShrink:0 }}>
-                {t.label}
-              </button>
-            );
-          })}
+      {/* Filtros — linha compacta */}
+      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+        {/* Busca */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, height:36, padding:'0 12px', border:'1px solid #E4E4E7', borderRadius:99, background:'#FFFFFF', flex:'1 1 220px', maxWidth:300 }}>
+          <i className="ti ti-search" style={{ fontSize:13, color:'#A1A1AA', flexShrink:0 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar lançamento, contato ou descrição..." style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, height:34, padding:'0 10px', border:'1px solid #E4E4E7', borderRadius:8, background:'#FFFFFF', width:240, flexShrink:0 }}>
-          <i className="ti ti-search" style={{ fontSize:13, color:'#A1A1AA' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar pessoa ou descrição..." style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
+
+        {/* Filtros popover */}
+        <div ref={filterWrapRef} style={{ position:'relative', flexShrink:0 }}>
+          <button onClick={() => setFilterOpen(v => !v)}
+            style={{ height:36, padding:'0 14px', border:`1px solid ${tab !== 'todas' ? '#000' : '#E4E4E7'}`, borderRadius:99, fontSize:12, fontWeight:500, color:tab !== 'todas' ? '#09090B' : '#71717A', background:tab !== 'todas' ? '#F4F4F5' : '#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
+            <i className="ti ti-filter" style={{ fontSize:12 }} />
+            {tab !== 'todas' ? activeFilterLabel : 'Filtros'}
+            {tab !== 'todas' && (
+              <span onClick={e => { e.stopPropagation(); setTab('todas'); }} style={{ marginLeft:2, color:'#71717A', fontSize:11, fontWeight:700 }}>×</span>
+            )}
+            <i className="ti ti-chevron-down" style={{ fontSize:11, marginLeft:2, transform:filterOpen?'rotate(180deg)':'none', transition:'transform .15s' }} />
+          </button>
+          {filterOpen && (
+            <div style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:200, background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', boxShadow:'0 8px 24px rgba(0,0,0,0.10)', padding:'6px', minWidth:200, animation:'fadeUp .12s ease' }}>
+              {CONTA_FILTER_TABS.map(t => {
+                const active = tab === t.key;
+                return (
+                  <button key={t.key} onClick={() => { setTab(t.key); setFilterOpen(false); }}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', padding:'8px 12px', borderRadius:8, border:'none', fontSize:12, fontWeight:active?600:400, color:active?'#09090B':'#374151', background:active?'#F4F4F5':'transparent', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+                    {t.label}
+                    {active && <i className="ti ti-check" style={{ fontSize:12, color:'#09090B' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto', flexShrink:0 }}>
-          <span style={{ fontSize:12, color:'#71717A', whiteSpace:'nowrap' }}>Saldo inicial:</span>
-          <div style={{ display:'flex', alignItems:'center', height:34, border:'1px solid #E4E4E7', borderRadius:8, background:'#FFFFFF', overflow:'hidden' }}>
-            <span style={{ padding:'0 8px', fontSize:12, color:'#A1A1AA', borderRight:'1px solid #E4E4E7' }}>R$</span>
-            <input type="number" value={saldoInicial} onChange={e => setSaldoInicial(e.target.value)} step={0.01}
-              style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:90, padding:'0 8px', fontFamily:'inherit', color:'#09090B' }} />
-          </div>
-          <div style={{ padding:'4px 10px', background:'#F0FDF4', borderRadius:8, border:'1px solid #BBF7D0' }}>
-            <span style={{ fontSize:12, fontWeight:600, color:'#16A34A' }}>Saldo atual: {fmt(saldoMap.total)}</span>
-          </div>
-        </div>
+
+        <div style={{ flex:1 }} />
+
+        {/* Ações */}
+        <button onClick={() => setNovaPanel('receita')}
+          style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #16A34A', borderRadius:99, fontSize:13, fontWeight:600, color:'#16A34A', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit', flexShrink:0 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#F0FDF4'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
+          <i className="ti ti-circle-arrow-down" style={{ fontSize:13 }} /> Lançar receita
+        </button>
+        <button onClick={() => setNovaPanel('despesa')}
+          style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #DC2626', borderRadius:99, fontSize:13, fontWeight:600, color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit', flexShrink:0 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#FEF2F2'; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
+          <i className="ti ti-circle-arrow-up" style={{ fontSize:13 }} /> Lançar despesa
+        </button>
       </div>
 
       {/* Barra de ações em massa */}
@@ -1835,6 +1918,8 @@ function ContasTab() {
           onCancelar={() => { setDetalhe(null); setCancelarConta(detalhe); }}
         />
       )}
+
+      {novaPanel && <NovaLancamentoPanel mode={novaPanel} onClose={() => setNovaPanel(null)} />}
     </div>
   );
 }
@@ -1881,19 +1966,10 @@ function RelatoriosTab() {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-const MAIN_TABS: { key: MainTab; label: string }[] = [
-  { key:'vendas',     label:'Vendas / Orçamentos' },
-  { key:'contas',     label:'Lançamentos financeiros' },
-  { key:'relatorios', label:'Relatórios' },
-];
-
 export function FinancialPage() {
-  const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [mainTab,        setMainTab]        = useState<MainTab>('vendas');
-  const [showNova,       setShowNova]       = useState(false);
-  const [receberSale,    setReceberSale]    = useState<Sale | null>(null);
-  const [novaPanel,      setNovaPanel]      = useState<'receita' | 'despesa' | null>(null);
+  const mainTab    = (searchParams.get('tab') as MainTab) || 'vendas';
 
   const { data: apiSales = [] } = useQuery({
     queryKey: ['all-sales'],
@@ -1901,8 +1977,6 @@ export function FinancialPage() {
   });
 
   const sales: Sale[] = useMemo(() => (apiSales as any[]).map(mapApiSale), [apiSales]);
-
-  const firstOpenSale = sales.find(s => s.open > 0);
 
   return (
     <>
@@ -1912,84 +1986,13 @@ export function FinancialPage() {
         @keyframes spin    { to { transform: rotate(360deg); } }
       `}</style>
 
-      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'#FAFAFA', fontFamily:"'Inter', system-ui, sans-serif" }}>
-
-        {/* Header */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E4E4E7', padding:'20px 40px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div>
-            <h1 style={{ fontSize:20, fontWeight:700, color:'#09090B', margin:0, letterSpacing:'-0.3px' }}>Financeiro</h1>
-            <p style={{ fontSize:13, color:'#71717A', margin:'3px 0 0' }}>Registre orçamentos, vendas, recebimentos e controle contas da clínica.</p>
-          </div>
-          <div style={{ display:'flex', gap:8 }}>
-            <button
-              onClick={() => firstOpenSale && setReceberSale(firstOpenSale)}
-              style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#09090B', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#F4F4F5'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
-              <i className="ti ti-cash" style={{ fontSize:14 }} /> Registrar recebimento
-            </button>
-            <button
-              onClick={() => setNovaPanel('receita')}
-              style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#16A34A', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#F0FDF4'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
-              <i className="ti ti-circle-arrow-down" style={{ fontSize:14 }} /> Nova receita
-            </button>
-            <button
-              onClick={() => setNovaPanel('despesa')}
-              style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#FEF2F2'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
-              <i className="ti ti-circle-arrow-up" style={{ fontSize:14 }} /> Nova despesa
-            </button>
-            <button
-              style={{ height:36, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#09090B', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#F4F4F5'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#FFFFFF'; }}>
-              <i className="ti ti-download" style={{ fontSize:14 }} /> Exportar
-            </button>
-            <button
-              onClick={() => setShowNova(true)}
-              style={{ height:36, padding:'0 16px', background:'#000000', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background='#18181B'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background='#000000'; }}>
-              <i className="ti ti-plus" style={{ fontSize:14 }} /> Novo atendimento / orçamento
-            </button>
-          </div>
-        </div>
-
-        {/* Abas */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E4E4E7', padding:'0 40px', display:'flex' }}>
-          {MAIN_TABS.map(t => (
-            <button key={t.key} onClick={() => setMainTab(t.key)} style={{ padding:'12px 16px', fontSize:13, fontWeight:mainTab===t.key?600:500, color:mainTab===t.key?'#09090B':'#71717A', background:'none', border:'none', borderBottom:mainTab===t.key?'2px solid #000000':'2px solid transparent', cursor:'pointer', fontFamily:'inherit', marginBottom:-1 }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Conteúdo */}
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'transparent', fontFamily:"'Inter', system-ui, sans-serif" }}>
         <div style={{ flex:1, overflowY:'auto', minHeight:0 }}>
-          {mainTab === 'vendas'     && <VendasTab sales={sales} onReceber={setReceberSale} />}
+          {mainTab === 'vendas'     && <VendasTab sales={sales} />}
           {mainTab === 'contas'     && <ContasTab />}
           {mainTab === 'relatorios' && <RelatoriosTab />}
         </div>
       </div>
-
-      {showNova && (
-        <NovaVendaModal
-          onClose={() => setShowNova(false)}
-          onSuccess={() => {
-            qc.invalidateQueries({ queryKey: ['all-sales'] });
-            qc.invalidateQueries({ queryKey: ['transactions'] });
-            qc.invalidateQueries({ queryKey: ['financial-summary'] });
-            setShowNova(false);
-          }}
-        />
-      )}
-
-      {novaPanel && <NovaLancamentoPanel mode={novaPanel} onClose={() => setNovaPanel(null)} />}
-
-      {receberSale && <ReceberPanel sale={receberSale} onClose={() => setReceberSale(null)} />}
     </>
   );
 }

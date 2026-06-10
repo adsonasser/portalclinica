@@ -61,6 +61,16 @@ export const plansApi = {
   remove: (id: string) => api.delete(`/plans/${id}`).then((r) => r.data),
 };
 
+// ─── Appointment Types ────────────────────────────────────────────────────────
+
+export const appointmentTypesApi = {
+  list: () => api.get('/appointment-types').then((r) => r.data),
+  get: (id: string) => api.get(`/appointment-types/${id}`).then((r) => r.data),
+  create: (data: any) => api.post('/appointment-types', data).then((r) => r.data),
+  update: (id: string, data: any) => api.patch(`/appointment-types/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/appointment-types/${id}`).then((r) => r.data),
+};
+
 // ─── Agenda ──────────────────────────────────────────────────────────────────
 
 export const agendaApi = {
@@ -72,6 +82,9 @@ export const agendaApi = {
   create: (data: any) => api.post('/agenda', data).then((r) => r.data),
   update: (id: string, data: any) => api.patch(`/agenda/${id}`, data).then((r) => r.data),
   remove: (id: string) => api.delete(`/agenda/${id}`).then((r) => r.data),
+  createReservation: (id: string, data: any) =>
+    api.post(`/agenda/${id}/reservation`, data).then((r) => r.data),
+  getSale: (id: string) => api.get(`/agenda/${id}/sale`).then((r) => r.data),
 };
 
 // ─── Financial ───────────────────────────────────────────────────────────────
@@ -91,6 +104,7 @@ export const financialApi = {
   deleteTransaction: (id: string) =>
     api.delete(`/financial/transactions/${id}`).then((r) => r.data),
   categories: () => api.get('/financial/categories').then((r) => r.data),
+  ensureDefaultCategory: () => api.post('/financial/categories/ensure-defaults').then((r) => r.data),
   createCategory: (data: any) => api.post('/financial/categories', data).then((r) => r.data),
   updateCategory: (id: string, data: any) =>
     api.patch(`/financial/categories/${id}`, data).then((r) => r.data),
@@ -246,4 +260,49 @@ export const accessProfilesApi = {
   remove: (id: string) => api.delete(`/access-profiles/${id}`).then((r) => r.data),
   duplicate: (id: string) => api.post(`/access-profiles/${id}/duplicate`).then((r) => r.data),
   seedDefaults: () => api.post('/access-profiles/seed-defaults').then((r) => r.data),
+};
+
+
+// ─── Contract Templates ───────────────────────────────────────────────────────
+
+export const contractTemplatesApi = {
+  list:   ()                        => api.get('/contract-templates').then((r) => r.data),
+  get:    (id: string)              => api.get(`/contract-templates/${id}`).then((r) => r.data),
+  create: (data: any)               => api.post('/contract-templates', data).then((r) => r.data),
+  update: (id: string, data: any)   => api.patch(`/contract-templates/${id}`, data).then((r) => r.data),
+  remove: (id: string)              => api.delete(`/contract-templates/${id}`).then((r) => r.data),
+};
+
+// ─── Contact Types ───────────────────────────────────────────────────────────
+
+export const contactTypesApi = {
+  list: () => api.get('/contact-types').then((r) => r.data),
+  create: (data: any) => api.post('/contact-types', data).then((r) => r.data),
+  update: (id: string, data: any) => api.patch(`/contact-types/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/contact-types/${id}`).then((r) => r.data),
+};
+
+// ─── WhatsApp Integration ────────────────────────────────────────────────────
+
+export const whatsAppApi = {
+  getConfig: () => api.get('/integrations/whatsapp').then((r) => r.data),
+  saveConfig: (data: any) => api.post('/integrations/whatsapp', data).then((r) => r.data),
+  generateQrCode: () => api.post('/integrations/whatsapp/qrcode').then((r) => r.data),
+  getStatus: () => api.get('/integrations/whatsapp/status').then((r) => r.data),
+  disconnect: () => api.post('/integrations/whatsapp/disconnect').then((r) => r.data),
+};
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+export const conversationsApi = {
+  list: () => api.get('/conversations').then((r) => r.data),
+  messages: (id: string) => api.get(`/conversations/${id}/messages`).then((r) => r.data),
+  open: (contactId: string) => api.post('/conversations/open', { contactId }).then((r) => r.data),
+  send: (id: string, content: string) => api.post(`/conversations/${id}/send`, { content }).then((r) => r.data),
+};
+
+// ─── Global Search ────────────────────────────────────────────────────────────
+
+export const searchApi = {
+  search: (q: string) => api.get('/search', { params: { q } }).then((r) => r.data),
 };

@@ -128,6 +128,21 @@ export class FinancialService {
     return this.prisma.financialCategory.create({ data: { ...data, clinicId } });
   }
 
+  async ensureDefaultCategory(clinicId: string) {
+    const existing = await this.prisma.financialCategory.findFirst({
+      where: { clinicId, name: 'Receita com Venda', type: 'INCOME' },
+    });
+    if (existing) return existing;
+    return this.prisma.financialCategory.create({
+      data: { clinicId, name: 'Receita com Venda', type: 'INCOME', active: true },
+    });
+  }
+
+  async getOrCreateDefaultCategory(clinicId: string): Promise<string | null> {
+    const cat = await this.ensureDefaultCategory(clinicId);
+    return cat?.id ?? null;
+  }
+
   async updateCategory(clinicId: string, id: string, data: any) {
     return this.prisma.financialCategory.update({ where: { id }, data });
   }

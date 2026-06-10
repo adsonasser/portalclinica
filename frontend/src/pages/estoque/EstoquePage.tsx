@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../components/ui/Toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -773,7 +774,9 @@ function RelatoriosTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function EstoquePage() {
-  const [tab,             setTab]             = useState('produtos');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab    = searchParams.get('tab') || 'produtos';
+  const setTab = (t: string) => setSearchParams({ tab: t }, { replace: true });
   const [novaEntradaOpen, setNovaEntradaOpen] = useState(false);
   const [consumoOpen,     setConsumoOpen]     = useState(false);
   const [novoProdutoOpen, setNovoProdutoOpen] = useState(false);
@@ -811,45 +814,31 @@ export function EstoquePage() {
         @keyframes slideIn { from { opacity:0; transform:translateX(30px); } to { opacity:1; transform:translateX(0); } }
       `}</style>
 
-      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'#F8F9FA', fontFamily:"'Inter', system-ui, sans-serif" }}>
-
-        {/* ── Header ───────────────────────────────────────────────────────── */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'18px 28px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div>
-            <h1 style={{ fontSize:20, fontWeight:700, color:'#191C1D', margin:0 }}>Estoque</h1>
-            <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>Controle produtos, insumos, lotes, validade e consumo da clínica.</p>
-          </div>
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            <button onClick={() => setConsumoOpen(true)}
-              style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
-              <i className="ti ti-circle-arrow-up" style={{ fontSize:14 }} /> Lançar consumo
-            </button>
-            <button onClick={() => setNovoProdutoOpen(true)}
-              style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
-              <i className="ti ti-plus" style={{ fontSize:14 }} /> Novo produto
-            </button>
-            <button
-              style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
-              <i className="ti ti-download" style={{ fontSize:14 }} /> Exportar
-            </button>
-            <button onClick={() => setNovaEntradaOpen(true)}
-              style={{ height:36, padding:'0 16px', background:'#000000', border:'none', borderRadius:10, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#18181B'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#000000'; }}>
-              <i className="ti ti-circle-arrow-down" style={{ fontSize:14 }} /> Nova entrada
-            </button>
-          </div>
-        </div>
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'transparent', fontFamily:"'Inter', system-ui, sans-serif" }}>
 
         {/* ── Scrollable body ───────────────────────────────────────────────── */}
         <div style={{ flex:1, minHeight:0, overflowY:'auto' }}>
-          <div style={{ padding:'20px 28px 0' }}>
+          <div style={{ padding:'16px 28px 0' }}>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginBottom:16 }}>
+              <button onClick={() => setConsumoOpen(true)}
+                style={{ height:34, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:99, fontSize:13, fontWeight:500, color:'#18181B', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
+                <i className="ti ti-circle-arrow-up" style={{ fontSize:14 }} /> Lançar consumo
+              </button>
+              <button onClick={() => setNovoProdutoOpen(true)}
+                style={{ height:34, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:99, fontSize:13, fontWeight:500, color:'#18181B', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
+                <i className="ti ti-plus" style={{ fontSize:14 }} /> Novo produto
+              </button>
+              <button onClick={() => setNovaEntradaOpen(true)}
+                style={{ height:38, padding:'0 18px', background:'#000000', border:'none', borderRadius:99, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:7, fontFamily:'inherit', boxShadow:'0 2px 8px rgba(0,0,0,0.15)' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#18181B'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#000000'; }}>
+                <i className="ti ti-circle-arrow-down" style={{ fontSize:15 }} /> Nova entrada
+              </button>
+            </div>
 
             {/* KPI Cards */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>

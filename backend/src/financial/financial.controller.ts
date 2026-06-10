@@ -34,6 +34,9 @@ export class FinancialController {
   @Get('categories')
   findCategories(@ClinicId() clinicId: string) { return this.financialService.findCategories(clinicId); }
 
+  @Post('categories/ensure-defaults')
+  ensureDefaultCategory(@ClinicId() clinicId: string) { return this.financialService.ensureDefaultCategory(clinicId); }
+
   @Post('categories')
   createCategory(@ClinicId() clinicId: string, @Body() dto: any) { return this.financialService.createCategory(clinicId, dto); }
 

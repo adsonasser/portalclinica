@@ -42,4 +42,14 @@ export class AgendaController {
   remove(@ClinicId() clinicId: string, @Param('id') id: string) {
     return this.agendaService.remove(clinicId, id);
   }
+
+  @Post(':id/reservation')
+  createReservation(@ClinicId() clinicId: string, @Param('id') id: string, @Body() dto: any) {
+    return this.agendaService.createReservation(clinicId, id, dto);
+  }
+
+  @Get(':id/sale')
+  getSale(@ClinicId() clinicId: string, @Param('id') id: string) {
+    return this.agendaService.getSaleForAppointment(clinicId, id);
+  }
 }

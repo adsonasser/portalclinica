@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 const SALE_INCLUDE = {
   patient: { select: { id: true, name: true, phone: true } },
   paymentMethod: true,
-  items: { include: { plan: true, product: true } },
+  items: { include: { plan: true, product: true, category: { select: { id: true, name: true } } } },
   sessions: { select: { id: true, sessionNumber: true, sessionStatus: true, date: true, attended: true } },
 };
 
@@ -60,6 +60,11 @@ export class SalesService {
     const type = saleType ?? (paid === 0 ? 'ORCAMENTO' : 'VENDA');
     const firstPmId = paymentsArr[0]?.paymentMethodId ?? null;
 
+    // Enrich items with categoryId from plan.defaultCategoryId
+    const enrichedItems = await this._enrichItemsWithCategory(items);
+    // Primary category = first item's category (for single-item sales)
+    const primaryCategoryId = enrichedItems[0]?.categoryId ?? null;
+
     return this.prisma.$transaction(async (tx) => {
       const sale = await tx.sale.create({
         data: {
@@ -70,7 +75,7 @@ export class SalesService {
           saleType: type,
           status,
           paymentMethodId: firstPmId,
-          items: { create: items },
+          items: { create: enrichedItems },
         },
         include: SALE_INCLUDE,
       });
@@ -83,6 +88,7 @@ export class SalesService {
             data: {
               clinicId,
               saleId: sale.id,
+              categoryId: primaryCategoryId,
               type: 'INCOME',
               status: 'PAID',
               description: `Recebimento — ${items[0]?.name || 'Venda'}`,
@@ -99,6 +105,7 @@ export class SalesService {
           data: {
             clinicId,
             saleId: sale.id,
+            categoryId: primaryCategoryId,
             type: 'INCOME',
             status: 'PENDING',
             description: `Saldo a receber — ${items[0]?.name || 'Venda'}`,
@@ -120,6 +127,14 @@ export class SalesService {
     });
   }
 
+  private async _enrichItemsWithCategory(items: any[]): Promise<any[]> {
+    return Promise.all(items.map(async (item) => {
+      if (item.categoryId || !item.planId) return item;
+      const plan = await this.prisma.plan.findUnique({ where: { id: item.planId }, select: { defaultCategoryId: true } });
+      return { ...item, categoryId: plan?.defaultCategoryId ?? null };
+    }));
+  }
+
   async receive(clinicId: string, id: string, data: any) {
     const sale = await this.findOne(clinicId, id);
     const amount = Number(data.amount) || 0;
@@ -139,10 +154,13 @@ export class SalesService {
         include: SALE_INCLUDE,
       });
 
+      const itemCategoryId = (sale.items[0] as any)?.categoryId ?? null;
+
       await tx.financialTransaction.create({
         data: {
           clinicId,
           saleId: id,
+          categoryId: itemCategoryId,
           type: 'INCOME',
           status: 'PAID',
           description: `Recebimento — ${sale.items[0]?.name ?? 'Venda'}`,
@@ -160,6 +178,7 @@ export class SalesService {
           data: {
             clinicId,
             saleId: id,
+            categoryId: itemCategoryId,
             type: 'INCOME',
             status: 'PENDING',
             description: `Saldo a receber — ${sale.items[0]?.name ?? 'Venda'}`,

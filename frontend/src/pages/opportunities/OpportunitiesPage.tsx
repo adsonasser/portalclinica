@@ -657,38 +657,30 @@ export function OpportunitiesPage() {
         @keyframes fadeUp  { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
       `}</style>
 
-      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'#F8F9FA', fontFamily:"'Inter', system-ui, sans-serif" }}>
+      <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'transparent', fontFamily:"'Inter', system-ui, sans-serif" }}>
 
-        {/* ── Header ───────────────────────────────────────────────────────── */}
-        <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'18px 28px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div>
-            <h1 style={{ fontSize:20, fontWeight:700, color:'#191C1D', margin:0 }}>Oportunidades</h1>
-            <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>Controle leads, negociações e oportunidades para aumentar a conversão da clínica.</p>
-          </div>
-          <div style={{ display:'flex', gap:8 }}>
+        {/* ── Scrollable (only for KPIs + tab bar) ─────────────────────────── */}
+        <div style={{ flexShrink:0, padding:'16px 28px 0' }}>
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginBottom:16 }}>
             {[
-              { icon:'ti-settings',     label:'Configurações' },
-              { icon:'ti-file-import',  label:'Importar leads' },
-              { icon:'ti-download',     label:'Exportar' },
+              { icon:'ti-settings',    label:'Configurações' },
+              { icon:'ti-file-import', label:'Importar' },
+              { icon:'ti-download',    label:'Exportar' },
             ].map(b => (
               <button key={b.label}
-                style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:10, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+                style={{ height:34, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:99, fontSize:13, fontWeight:500, color:'#18181B', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#FFFFFF'; }}>
                 <i className={`ti ${b.icon}`} style={{ fontSize:14 }} /> {b.label}
               </button>
             ))}
             <button
-              style={{ height:36, padding:'0 16px', background:'#000', border:'none', borderRadius:10, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+              style={{ height:38, padding:'0 18px', background:'#000', border:'none', borderRadius:99, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:7, fontFamily:'inherit', boxShadow:'0 2px 8px rgba(0,0,0,0.15)' }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#18181B'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#000'; }}>
-              <i className="ti ti-plus" style={{ fontSize:14 }} /> Novo lead
+              <i className="ti ti-plus" style={{ fontSize:15 }} /> Novo lead
             </button>
           </div>
-        </div>
-
-        {/* ── Scrollable (only for KPIs + tab bar) ─────────────────────────── */}
-        <div style={{ flexShrink:0, padding:'20px 28px 0' }}>
 
           {/* KPI Cards */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:20 }}>

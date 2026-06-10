@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
@@ -168,32 +169,38 @@ model Clinic {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  users           User[]
-  accessProfiles  AccessProfile[]
-  patients        Patient[]
-  plans           Plan[]
-  sessions        Session[]
-  appointments    Appointment[]
-  professionals   Professional[]
-  leads           Lead[]
-  tasks           Task[]
-  messages        Message[]
-  transactions    FinancialTransaction[]
-  categories      FinancialCategory[]
-  paymentMethods  PaymentMethod[]
-  sales           Sale[]
-  products        Product[]
-  productCategories ProductCategory[]
-  suppliers       Supplier[]
-  stockMovements  StockMovement[]
-  templates         Template[]
-  opportunities     Opportunity[]
-  files             ClinicFile[]
-  settings          ClinicSettings?
-  documentTemplates DocumentTemplate[]
-  patientDocuments  PatientDocument[]
-  subscription      TenantSubscription?
-  auditLogs         AuditLog[]
+  users               User[]
+  accessProfiles      AccessProfile[]
+  patients            Patient[]
+  plans               Plan[]
+  sessions            Session[]
+  appointments        Appointment[]
+  professionals       Professional[]
+  leads               Lead[]
+  tasks               Task[]
+  messages            Message[]
+  transactions        FinancialTransaction[]
+  categories          FinancialCategory[]
+  paymentMethods      PaymentMethod[]
+  sales               Sale[]
+  products            Product[]
+  productCategories   ProductCategory[]
+  suppliers           Supplier[]
+  stockMovements      StockMovement[]
+  templates           Template[]
+  opportunities       Opportunity[]
+  files               ClinicFile[]
+  settings            ClinicSettings?
+  documentTemplates   DocumentTemplate[]
+  patientDocuments    PatientDocument[]
+  subscription        TenantSubscription?
+  auditLogs           AuditLog[]
+  appointmentTypes    AppointmentType[]
+  contractTemplates   ContractTemplate[]
+  contactTypeDefinitions ClinicContactType[]
+  whatsAppConfig      WhatsAppConfig?
+  conversations       Conversation[]
+  chatMessages        ChatMessage[]
 
   @@map("clinics")
 }
@@ -250,6 +257,7 @@ model User {
   professional  Professional?
   tasks         Task[]          @relation("TaskAssignee")
   messages      Message[]
+  chatMessages  ChatMessage[]
 
   @@unique([clinicId, email])
   @@map("users")
@@ -339,6 +347,8 @@ model Patient {
   files           ClinicFile[]
   opportunities   Opportunity[]
   documents       PatientDocument[]
+  contactTypes    PatientContactType[]
+  conversations   Conversation[]
 
   @@unique([clinicId, cpf])
   @@map("patients")
@@ -355,6 +365,7 @@ model Plan {
   color               String    @default("#535845")
   active              Boolean   @default(true)
   defaultCategoryId   String?
+  contractTemplateId  String?
   costType            CostType  @default(FIXED)
   costValue           Float     @default(0)
   categoria           String?
@@ -371,6 +382,7 @@ model Plan {
 
   clinic              Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   defaultCategory     FinancialCategory?   @relation(fields: [defaultCategoryId], references: [id])
+  contractTemplate    ContractTemplate?    @relation(fields: [contractTemplateId], references: [id])
   sessions            Session[]
   appointments        Appointment[]
   procedureProducts   ProcedureProduct[]
@@ -392,6 +404,7 @@ model Session {
   notes          String?
   observations   String?
   attended       Boolean  @default(false)
+  appointmentId  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -405,25 +418,49 @@ model Session {
 }
 
 model Appointment {
-  id             String                @id @default(cuid())
-  clinicId       String
-  patientId      String
-  planId         String?
-  professionalId String?
-  startTime      DateTime
-  endTime        DateTime
-  status         AppointmentStatusType @default(AGUARDANDO)
-  notes          String?
-  isReturn       Boolean               @default(false)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
+  id                String                @id @default(cuid())
+  clinicId          String
+  patientId         String
+  planId            String?
+  appointmentTypeId String?
+  professionalId    String?
+  saleId            String?
+  startTime         DateTime
+  endTime           DateTime
+  status            AppointmentStatusType @default(AGUARDANDO)
+  notes             String?
+  room              String?
+  isReturn          Boolean               @default(false)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
-  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  patient      Patient       @relation(fields: [patientId], references: [id])
-  plan         Plan?         @relation(fields: [planId], references: [id])
-  professional Professional? @relation(fields: [professionalId], references: [id])
+  clinic          Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient         Patient          @relation(fields: [patientId], references: [id])
+  plan            Plan?            @relation(fields: [planId], references: [id])
+  appointmentType AppointmentType? @relation(fields: [appointmentTypeId], references: [id])
+  professional    Professional?    @relation(fields: [professionalId], references: [id])
+  sale            Sale?            @relation(fields: [saleId], references: [id])
 
   @@map("appointments")
+}
+
+model AppointmentType {
+  id                     String   @id @default(cuid())
+  clinicId               String
+  name                   String
+  description            String?
+  defaultDurationMinutes Int      @default(60)
+  color                  String   @default("#2563EB")
+  isActive               Boolean  @default(true)
+  sortOrder              Int      @default(0)
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@map("appointment_types")
 }
 
 model EvolutionNote {
@@ -651,6 +688,7 @@ model FinancialCategory {
   children     FinancialCategory[]  @relation("CategoryHierarchy")
   transactions FinancialTransaction[]
   plans        Plan[]
+  saleItems    SaleItem[]
 
   @@map("financial_categories")
 }
@@ -718,24 +756,27 @@ model Sale {
   items         SaleItem[]
   transactions  FinancialTransaction[]
   sessions      Session[]
+  appointments  Appointment[]
 
   @@map("sales")
 }
 
 model SaleItem {
-  id        String  @id @default(cuid())
-  saleId    String
-  planId    String?
-  productId String?
-  name      String
-  quantity  Int     @default(1)
-  unitPrice Float
-  discount  Float   @default(0)
-  total     Float
+  id          String  @id @default(cuid())
+  saleId      String
+  planId      String?
+  productId   String?
+  categoryId  String?
+  name        String
+  quantity    Int     @default(1)
+  unitPrice   Float
+  discount    Float   @default(0)
+  total       Float
 
-  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  plan    Plan?    @relation(fields: [planId], references: [id])
-  product Product? @relation(fields: [productId], references: [id])
+  sale     Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  plan     Plan?              @relation(fields: [planId], references: [id])
+  product  Product?           @relation(fields: [productId], references: [id])
+  category FinancialCategory? @relation(fields: [categoryId], references: [id])
 
   @@map("sale_items")
 }
@@ -963,4 +1004,116 @@ model AuditLog {
   clinic Clinic? @relation(fields: [clinicId], references: [id])
 
   @@map("audit_logs")
+}
+
+model ContractTemplate {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String
+  description String?
+  content     String
+  variables   Json     @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  plans  Plan[]
+
+  @@map("contract_templates")
+}
+
+model ClinicContactType {
+  id          String   @id @default(cuid())
+  clinicId    String
+  name        String
+  description String?
+  color       String   @default("#71717A")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic   Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patients PatientContactType[]
+
+  @@map("clinic_contact_types")
+}
+
+model PatientContactType {
+  id            String   @id @default(cuid())
+  clinicId      String
+  patientId     String
+  contactTypeId String
+  createdAt     DateTime @default(now())
+
+  patient     Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  contactType ClinicContactType @relation(fields: [contactTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, contactTypeId])
+  @@map("patient_contact_types")
+}
+
+// ─── WhatsApp / Conversations ─────────────────────────────────────────────────
+
+model WhatsAppConfig {
+  id           String   @id @default(cuid())
+  clinicId     String   @unique
+  baseUrl      String
+  apiKey       String
+  instanceName String
+  active       Boolean  @default(false)
+  connected    Boolean  @default(false)
+  webhookUrl   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_configs")
+}
+
+model Conversation {
+  id                 String    @id @default(cuid())
+  clinicId           String
+  contactId          String
+  channel            String    @default("whatsapp")
+  provider           String    @default("evolution_api")
+  externalChatId     String?
+  status             String    @default("open")
+  lastMessageAt      DateTime?
+  lastMessagePreview String?
+  unreadCount        Int       @default(0)
+  assignedUserId     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  contact      Patient       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
+
+  @@unique([clinicId, contactId, channel, provider])
+  @@map("conversations")
+}
+
+model ChatMessage {
+  id                String   @id @default(cuid())
+  clinicId          String
+  conversationId    String
+  direction         String
+  channel           String   @default("whatsapp")
+  provider          String   @default("evolution_api")
+  content           String
+  status            String   @default("pending")
+  sentByUserId      String?
+  sentAt            DateTime?
+  receivedAt        DateTime?
+  providerMessageId String?  @unique
+  createdAt         DateTime @default(now())
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation(fields: [sentByUserId], references: [id])
+
+  @@map("chat_messages")
 }

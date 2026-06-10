@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { plansApi } from '../../services/api';
+import { plansApi, financialApi, contractTemplatesApi } from '../../services/api';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
 
@@ -231,19 +231,51 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
   const isEdit = !!plan;
   const qc     = useQueryClient();
 
-  const [nome,         setNome]         = useState(plan?.name || '');
-  const [categoria,    setCategoria]    = useState(plan?.categoria || '');
-  const [tipo,         setTipo]         = useState(plan?.tipo || '');
-  const [descricao,    setDescricao]    = useState(plan?.description || '');
-  const [valorPadrao,  setValorPadrao]  = useState(plan?.price != null ? String(plan.price) : '');
-  const [ativo,        setAtivo]        = useState<boolean>(plan ? plan.active : true);
-  const [tipoSessoes,  setTipoSessoes]  = useState<SessionMode>(plan?.tipoGeracaoSessoes || 'nao_gera');
-  const [qtdSessoes,   setQtdSessoes]   = useState(String(plan?.quantidadeSessoes || plan?.sessionsTotal || 1));
-  const [duracao,      setDuracao]      = useState(String(plan?.duracaoPadrao || plan?.duration || ''));
-  const [profissional, setProfissional] = useState(plan?.profissionalPadrao || '');
-  const [sala,         setSala]         = useState(plan?.salaPadrao || '');
-  const [validadeDias, setValidadeDias] = useState(plan?.validadeDias != null ? String(plan.validadeDias) : '');
-  const [error,        setError]        = useState('');
+  const [nome,               setNome]               = useState(plan?.name || '');
+  const [categoria,          setCategoria]          = useState(plan?.categoria || '');
+  const [tipo,               setTipo]               = useState(plan?.tipo || '');
+  const [descricao,          setDescricao]          = useState(plan?.description || '');
+  const [valorPadrao,        setValorPadrao]        = useState(plan?.price != null ? String(plan.price) : '');
+  const [ativo,              setAtivo]              = useState<boolean>(plan ? plan.active : true);
+  const [tipoSessoes,        setTipoSessoes]        = useState<SessionMode>(plan?.tipoGeracaoSessoes || 'nao_gera');
+  const [qtdSessoes,         setQtdSessoes]         = useState(String(plan?.quantidadeSessoes || plan?.sessionsTotal || 1));
+  const [duracao,            setDuracao]            = useState(String(plan?.duracaoPadrao || plan?.duration || ''));
+  const [profissional,       setProfissional]       = useState(plan?.profissionalPadrao || '');
+  const [sala,               setSala]               = useState(plan?.salaPadrao || '');
+  const [validadeDias,       setValidadeDias]       = useState(plan?.validadeDias != null ? String(plan.validadeDias) : '');
+  const [defaultCategoryId,  setDefaultCategoryId]  = useState<string>(plan?.defaultCategoryId || '');
+  const [contractTemplateId, setContractTemplateId] = useState<string>(plan?.contractTemplateId || '');
+  const [error,              setError]              = useState('');
+
+  // Load contract templates
+  const { data: contractTemplatesData = [] } = useQuery({
+    queryKey: ['contract-templates'],
+    queryFn:  contractTemplatesApi.list,
+    staleTime: 5 * 60_000,
+  });
+  const activeContractTemplates = useMemo(() =>
+    ((contractTemplatesData as any[]) || []).filter((t: any) => t.isActive),
+    [contractTemplatesData]
+  );
+
+  // Load income categories
+  const { data: categoriesData } = useQuery({
+    queryKey: ['financial-categories'],
+    queryFn:  () => financialApi.categories(),
+    staleTime: 5 * 60_000,
+  });
+  const incomeCategories = useMemo(() =>
+    ((categoriesData as any[]) || []).filter((c: any) => c.type === 'INCOME' && c.active !== false),
+    [categoriesData]
+  );
+
+  // Auto-select "Receita com Venda" on new procedures when categories load
+  useEffect(() => {
+    if (!isEdit && !defaultCategoryId && incomeCategories.length > 0) {
+      const dflt = incomeCategories.find((c: any) => c.name === 'Receita com Venda') || incomeCategories[0];
+      if (dflt) setDefaultCategoryId(dflt.id);
+    }
+  }, [incomeCategories, isEdit, defaultCategoryId]);
 
   const loadCompositeRows = (): CompositeRow[] => {
     if (!Array.isArray(plan?.composicaoSessoes) || plan.composicaoSessoes.length === 0) return [];
@@ -291,10 +323,11 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
   });
 
   const handleSave = () => {
-    if (!nome.trim())  { setError('Nome é obrigatório.'); return; }
-    if (!categoria)    { setError('Categoria é obrigatória.'); return; }
-    if (!tipo)         { setError('Tipo é obrigatório.'); return; }
-    if (!valorPadrao)  { setError('Valor padrão é obrigatório.'); return; }
+    if (!nome.trim())         { setError('Nome é obrigatório.'); return; }
+    if (!categoria)           { setError('Categoria é obrigatória.'); return; }
+    if (!tipo)                { setError('Tipo é obrigatório.'); return; }
+    if (!valorPadrao)         { setError('Valor padrão é obrigatório.'); return; }
+    if (!defaultCategoryId)   { setError('Conta DRE é obrigatória.'); return; }
     if (tipoSessoes === 'multipla' && (!qtdSessoes || Number(qtdSessoes) < 1)) {
       setError('Quantidade de sessões deve ser maior que zero.'); return;
     }
@@ -329,6 +362,8 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
       profissionalPadrao: profissional || undefined,
       salaPadrao:         sala || undefined,
       validadeDias:       validadeDias ? Number(validadeDias) : undefined,
+      defaultCategoryId:   defaultCategoryId || undefined,
+      contractTemplateId:  contractTemplateId || undefined,
       composicaoSessoes:  tipoSessoes === 'composta' ? compositeRows.map(r => ({
         procedimentoId:   r.procedimentoId,
         nome:             r.procedimentoNome,
@@ -464,6 +499,39 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
               <div>
                 <label style={lbl}>Validade após compra (dias)</label>
                 <input type="number" min={0} value={validadeDias} onChange={e => setValidadeDias(e.target.value)} placeholder="Vazio = sem limite" style={inp} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={lbl}>
+                  Conta DRE / Conta financeira padrão <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                {incomeCategories.length === 0 ? (
+                  <div style={{ padding: '9px 12px', border: '1px solid #FEF08A', borderRadius: 9, background: '#FEFCE8', fontSize: 12, color: '#854D0E' }}>
+                    Nenhuma conta de receita cadastrada.{' '}
+                    <strong>Financeiro &gt; Contas financeiras / DRE</strong> para criar.
+                  </div>
+                ) : (
+                  <select value={defaultCategoryId} onChange={e => setDefaultCategoryId(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                    <option value="">Selecionar conta DRE</option>
+                    {incomeCategories.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+                <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 5, margin: '5px 0 0' }}>
+                  Esta conta será usada automaticamente ao lançar uma venda com este procedimento.
+                </p>
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={lbl}>Modelo de contrato</label>
+                <select value={contractTemplateId} onChange={e => setContractTemplateId(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                  <option value="">Nenhum (sem contrato)</option>
+                  {activeContractTemplates.map((t: any) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 5, margin: '5px 0 0' }}>
+                  Ao vender este procedimento, o sistema sugerirá gerar o contrato selecionado.
+                </p>
               </div>
             </div>
           </div>

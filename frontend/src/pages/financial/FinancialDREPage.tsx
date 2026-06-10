@@ -29,7 +29,7 @@ function FinancialNav() {
 
 export function FinancialDREPage() {
   return (
-    <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'#F8F9FA', fontFamily:"'Inter', system-ui, sans-serif" }}>
+    <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'transparent', fontFamily:"'Inter', system-ui, sans-serif" }}>
       <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'18px 28px' }}>
         <h1 style={{ fontSize:20, fontWeight:700, color:'#191C1D', margin:0 }}>Relatórios</h1>
         <p style={{ fontSize:12, color:'#71717A', margin:'2px 0 0' }}>Relatórios financeiros, DRE e análises do período.</p>

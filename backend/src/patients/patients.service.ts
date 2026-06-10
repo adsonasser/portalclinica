@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class PatientsService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(clinicId: string, query?: { search?: string; status?: string }) {
+  async findAll(clinicId: string, query?: { search?: string; status?: string; contactTypeId?: string }) {
     const where: any = { clinicId };
     if (query?.search) {
       where.OR = [
@@ -16,12 +16,16 @@ export class PatientsService {
       ];
     }
     if (query?.status) where.status = query.status;
+    if (query?.contactTypeId) {
+      where.contactTypes = { some: { contactTypeId: query.contactTypeId } };
+    }
 
     return this.prisma.patient.findMany({
       where,
       orderBy: { name: 'asc' },
       include: {
         _count: { select: { appointments: true, sessions: true } },
+        contactTypes: { include: { contactType: true } },
       },
     });
   }
@@ -38,6 +42,7 @@ export class PatientsService {
         patientNotes: { orderBy: { createdAt: 'desc' } },
         sales: { orderBy: { createdAt: 'desc' }, take: 5 },
         documents: { orderBy: { createdAt: 'desc' }, include: { template: true } },
+        contactTypes: { include: { contactType: true } },
       },
     });
     if (!p) throw new NotFoundException('Paciente não encontrado');
@@ -45,12 +50,31 @@ export class PatientsService {
   }
 
   async create(clinicId: string, data: any) {
-    return this.prisma.patient.create({ data: { ...data, clinicId } });
+    const { contactTypeIds, ...rest } = data;
+    const patient = await this.prisma.patient.create({ data: { ...rest, clinicId } });
+    if (contactTypeIds?.length) {
+      await this.prisma.patientContactType.createMany({
+        data: contactTypeIds.map((contactTypeId: string) => ({ patientId: patient.id, contactTypeId, clinicId })),
+        skipDuplicates: true,
+      });
+    }
+    return this.findOne(clinicId, patient.id);
   }
 
   async update(clinicId: string, id: string, data: any) {
     await this.findOneSimple(clinicId, id);
-    return this.prisma.patient.update({ where: { id }, data });
+    const { contactTypeIds, ...rest } = data;
+    await this.prisma.patient.update({ where: { id }, data: rest });
+    if (contactTypeIds !== undefined) {
+      await this.prisma.patientContactType.deleteMany({ where: { patientId: id } });
+      if (contactTypeIds.length) {
+        await this.prisma.patientContactType.createMany({
+          data: contactTypeIds.map((contactTypeId: string) => ({ patientId: id, contactTypeId, clinicId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+    return this.findOne(clinicId, id);
   }
 
   async remove(clinicId: string, id: string) {
