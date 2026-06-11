@@ -1116,9 +1116,17 @@ export function PatientDetailPage() {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 12 }}>
         <i className="ti ti-user-x" style={{ fontSize: 40, color: '#D4D4D8' }} />
-        <div style={{ fontSize: 15, fontWeight: 500, color: '#71717A' }}>Paciente não encontrado</div>
-        <button onClick={() => navigate('/patients')} style={{ marginTop: 4, fontSize: 13, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-          ← Voltar para Pacientes
+        <div style={{ fontSize: 15, fontWeight: 500, color: '#71717A' }}>
+          {isError ? 'Erro ao carregar contato' : 'Paciente não encontrado'}
+        </div>
+        {isError && (
+          <div style={{ fontSize: 12, color: '#A1A1AA', maxWidth: 320, textAlign: 'center' }}>
+            Pode ser um problema temporário de banco de dados. Tente novamente em instantes.
+          </div>
+        )}
+        <button onClick={() => isError ? window.location.reload() : navigate('/patients')}
+          style={{ marginTop: 4, fontSize: 13, color: '#2563EB', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+          {isError ? '↺ Tentar novamente' : '← Voltar para Contatos'}
         </button>
       </div>
     );
