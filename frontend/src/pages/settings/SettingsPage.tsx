@@ -180,8 +180,6 @@ function DreAccountsView({ onBack }: { onBack: () => void }) {
   function toggleActive(id: string)  { const u = accounts.map(a => a.id === id ? { ...a, active: !a.active } : a); setAccounts(u); saveDreAccounts(u); }
 
   const filtered = accounts.filter(a => filterType === 'all' || a.type === filterType);
-  const mc = MODULE_STATUS.find(m => m.key === 'financial')!;
-
   return (
     <SubView title="Contas financeiras / DRE" desc="Plano de contas para classificar receitas e despesas no DRE." icon="ti-building-bank" iconBg="#FEFCE8" iconColor="#A16207" parentLabel="Financeiro" onBack={onBack}
       actions={<button onClick={openNew} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}><i className="ti ti-plus" style={{ fontSize: 14 }} /> Nova conta</button>}>
@@ -692,7 +690,7 @@ function buildReadOnlyPerms(): PermMap {
   return p;
 }
 
-function mergePerms(base: PermMap, incoming: any): PermMap {
+function mergePerms(_base: PermMap, incoming: any): PermMap {
   const p = buildEmptyPerms();
   if (!incoming || typeof incoming !== 'object') return p;
   PERM_MODULES.forEach(m => {

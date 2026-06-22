@@ -538,7 +538,7 @@ export function LoginPage() {
               {/* Footer links */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginTop: 18, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, color: '#C4C4C4' }}>Portal Clínica v1.0</span>
-                {['LGPD', 'Privacidade', 'Suporte'].map((l, i) => (
+                {['LGPD', 'Privacidade', 'Suporte'].map((l) => (
                   <span key={l} style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#D4D4D8', margin: '0 6px' }}>·</span>
                     <button type="button"

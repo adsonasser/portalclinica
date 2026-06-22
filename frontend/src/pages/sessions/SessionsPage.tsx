@@ -75,18 +75,6 @@ const STATUS_MAP: Record<string, SessionStatus> = {
   SUSPENSA:       'suspensa',
 };
 
-const STATUS_TO_API: Record<SessionStatus, string> = {
-  a_agendar:      'A_AGENDAR',
-  agendada:       'AGENDADA',
-  confirmada:     'CONFIRMADA',
-  em_atendimento: 'EM_ATENDIMENTO',
-  realizada:      'REALIZADA',
-  faltou:         'FALTOU',
-  cancelada:      'CANCELADA',
-  reagendada:     'REAGENDADA',
-  vencida:        'VENCIDA',
-  suspensa:       'SUSPENSA',
-};
 
 function mapApiSession(raw: any, sessoesPorVenda: Map<string, number>): Session {
   const status = STATUS_MAP[raw.sessionStatus] ?? 'a_agendar';
@@ -145,12 +133,6 @@ const PKG_STATUS_CFG: Record<PackageStatus, { bg: string; color: string; dot: st
 
 const ROOMS = ['Sala 01', 'Sala 02', 'Enfermagem', 'Online'];
 
-const SESSION_NEXT: Partial<Record<SessionStatus, SessionStatus>> = {
-  agendada: 'confirmada',
-  confirmada: 'em_atendimento',
-  em_atendimento: 'realizada',
-  faltou: 'a_agendar',
-};
 
 // ─── Mini Calendar ────────────────────────────────────────────────────────────
 function MiniCalendar({ value, onChange, busyDates }: {

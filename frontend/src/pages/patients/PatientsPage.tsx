@@ -117,25 +117,6 @@ export function PatientsPage() {
     setDrawerOpen(true);
   };
 
-  const openEdit = (p: any) => {
-    setForm({
-      name:           p.name  || '',
-      contactTypeIds: (p.contactTypes ?? []).map((ct: any) => ct.contactTypeId),
-      email:          p.email || '',
-      phone:          p.phone || '',
-      cpf:            p.cpf   || '',
-      birthDate:      p.birthDate ? p.birthDate.slice(0, 10) : '',
-      gender:         p.gender || '',
-      source:         p.source || '',
-      status:         p.status || 'NOVO',
-      notes:          p.notes  || '',
-    });
-    setEditingId(p.id);
-    setSaveError(null);
-    setFormErrors({});
-    setDrawerOpen(true);
-  };
-
   const closeDrawer = () => { setDrawerOpen(false); setSaveError(null); setFormErrors({}); setEditingId(null); };
 
   const validate = (): boolean => {

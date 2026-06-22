@@ -19,7 +19,7 @@ interface Movimentacao {
 }
 
 interface ValidadeItem {
-  produto: string; lote: string; qtd: string; validade: string; dias: number; status: ExpStatus;
+  produto: string; lote: string; qtd: string; validade: string; dias: number | null; status: ExpStatus;
 }
 
 interface Sugestao {
@@ -646,16 +646,16 @@ function ValidadesTab() {
                   <td style={{ padding:'12px 16px', fontSize:13, fontWeight:600, color:'#191C1D' }}>{v.produto}</td>
                   <td style={{ padding:'12px 16px', fontSize:12, color:'#71717A' }}>{v.lote}</td>
                   <td style={{ padding:'12px 16px', fontSize:12, color:'#374151' }}>{v.qtd}</td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color: v.dias <= 15 ? '#DC2626' : '#374151', fontWeight: v.dias <= 15 ? 600 : 400 }}>{v.validade}</td>
+                  <td style={{ padding:'12px 16px', fontSize:12, color: (v.dias ?? 0) <= 15 ? '#DC2626' : '#374151', fontWeight: (v.dias ?? 0) <= 15 ? 600 : 400 }}>{v.validade}</td>
                   <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                    <span style={{ fontSize:12, fontWeight:700, color: v.dias <= 15 ? '#DC2626' : v.dias <= 45 ? '#D97706' : '#374151' }}>{v.dias} dias</span>
+                    <span style={{ fontSize:12, fontWeight:700, color: (v.dias ?? 0) <= 15 ? '#DC2626' : (v.dias ?? 0) <= 45 ? '#D97706' : '#374151' }}>{v.dias ?? '—'} {v.dias != null ? 'dias' : ''}</span>
                   </td>
                   <td style={{ padding:'12px 16px' }}>
                     <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.color }}>{st.label}</span>
                   </td>
                   <td style={{ padding:'12px 16px' }}>
                     <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-                      {v.dias <= 30 ? (
+                      {(v.dias ?? 0) <= 30 ? (
                         <button onClick={ni} style={{ height:28, padding:'0 11px', background:'#FFF7ED', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#C2410C', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>Priorizar uso</button>
                       ) : (
                         <button onClick={ni} style={{ height:28, padding:'0 11px', background:'#F4F4F5', border:'none', borderRadius:7, fontSize:11, fontWeight:500, color:'#71717A', cursor:'pointer', fontFamily:'inherit' }}>Ver</button>

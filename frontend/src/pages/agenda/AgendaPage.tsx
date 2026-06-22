@@ -939,7 +939,7 @@ export function AgendaPage() {
   const fetchStart = new Date(calYear, calMonth, 1).toISOString();
   const fetchEnd   = new Date(calYear, calMonth + 1, 0, 23, 59, 59).toISOString();
 
-  const { data: apptData, refetch: refetchAppts } = useQuery({
+  const { data: apptData } = useQuery({
     queryKey: ['appointments', calYear, calMonth],
     queryFn:  () => agendaApi.list({ start: fetchStart, end: fetchEnd }),
     staleTime: 30_000,

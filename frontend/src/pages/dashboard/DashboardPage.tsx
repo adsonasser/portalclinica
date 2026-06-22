@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { dashboardApi } from '../../services/api';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import { format } from 'date-fns';
-import { useAuth } from '../../contexts/AuthContext';
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
@@ -14,7 +13,6 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function DashboardPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const { data: stats, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.stats });
   const { data: chart } = useQuery({ queryKey: ['dashboard-chart'], queryFn: () => dashboardApi.chart(6) });

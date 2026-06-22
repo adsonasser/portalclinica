@@ -109,7 +109,7 @@ export function AppLayout() {
   const [scrolled,      setScrolled]      = useState(false);
   const [avatarMenu,    setAvatarMenu]    = useState<{ x: number; y: number } | null>(null);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
-  const [impSession, setImpSession] = useState<{ clinicId: string; clinicName: string } | null>(() => {
+  const [impSession, _setImpSession] = useState<{ clinicId: string; clinicName: string } | null>(() => {
     try { return JSON.parse(localStorage.getItem('impersonate_session') ?? 'null'); }
     catch { return null; }
   });

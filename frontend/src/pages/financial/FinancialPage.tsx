@@ -2219,8 +2219,6 @@ function BulkDivergenteModal({ contas, onClose }: { contas: Conta[]; onClose: ()
 }
 
 function ContasTab() {
-  const qc = useQueryClient();
-
   const [tab,              setTab]              = useState('pendencias');
   const [search,           setSearch]           = useState('');
   const [saldoInicial,     setSaldoInicial]     = useState('0');
@@ -2696,7 +2694,7 @@ function RelatoriosTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export function FinancialPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const mainTab    = (searchParams.get('tab') as MainTab) || 'vendas';
 

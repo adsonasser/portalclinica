@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../../services/gerencialApi';
@@ -36,8 +36,14 @@ export function EmpresaDetailPage() {
     queryKey: ['gerencial-clinic', id],
     queryFn: () => adminApi.getClinic(id!),
     enabled: !!id,
-    onSuccess: (d: any) => { if (!editForm) setEditForm({ name: d.name, email: d.email, phone: d.phone, cnpj: d.cnpj, responsavel: d.responsavel, cidade: d.cidade, estado: d.estado, observacoes: d.observacoes }); },
   });
+
+  useEffect(() => {
+    if (clinic && !editForm) {
+      const d = clinic as any;
+      setEditForm({ name: d.name, email: d.email, phone: d.phone, cnpj: d.cnpj, responsavel: d.responsavel, cidade: d.cidade, estado: d.estado, observacoes: d.observacoes });
+    }
+  }, [clinic]);
 
   const { data: users = [] } = useQuery({
     queryKey: ['gerencial-clinic-users', id],
