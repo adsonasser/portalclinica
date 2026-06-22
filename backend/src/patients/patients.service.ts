@@ -26,6 +26,9 @@ export class PatientsService {
       include: {
         _count: { select: { appointments: true, sessions: true } },
         contactTypes: { include: { contactType: true } },
+        sales:        { select: { paidAmount: true, status: true, saleType: true, total: true } },
+        appointments: { select: { status: true } },
+        sessions:     { select: { sessionStatus: true } },
       },
     });
   }

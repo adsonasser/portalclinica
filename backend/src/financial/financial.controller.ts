@@ -28,6 +28,9 @@ export class FinancialController {
   @Post('transactions/:id/receive')
   receiveTransaction(@ClinicId() clinicId: string, @Param('id') id: string, @Body() dto: any) { return this.financialService.receiveTransaction(clinicId, id, dto); }
 
+  @Post('transactions/:id/cancel')
+  cancelTransaction(@ClinicId() clinicId: string, @Param('id') id: string, @Body() dto: any) { return this.financialService.cancelTransaction(clinicId, id, dto?.motivo); }
+
   @Delete('transactions/:id')
   deleteTransaction(@ClinicId() clinicId: string, @Param('id') id: string) { return this.financialService.deleteTransaction(clinicId, id); }
 

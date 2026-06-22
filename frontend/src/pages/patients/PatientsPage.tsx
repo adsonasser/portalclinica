@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { patientsApi } from '../../services/api';
+import { patientsApi, contactTypesApi } from '../../services/api';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
+import { Portal } from '../../components/ui/Portal';
+import { calcPatientScore, scoreBadge } from '../../utils/patientScore';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   ATIVO:         { bg: '#DCFCE7', color: '#16A34A', dot: '#22C55E', label: 'Ativo' },
@@ -16,22 +19,15 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; lab
   NOVO:          { bg: '#DCFCE7', color: '#16A34A', dot: '#22C55E', label: 'Novo' },
 };
 
-const CONTACT_TYPE: Record<string, { label: string; bg: string; color: string }> = {
-  PACIENTE:    { label: 'Paciente',    bg: '#EFF6FF', color: '#2563EB' },
-  RESPONSAVEL: { label: 'Responsável', bg: '#F0FDF4', color: '#16A34A' },
-  ACOMPANHANTE:{ label: 'Acompanhante',bg: '#FEF9C3', color: '#A16207' },
-  OUTROS:      { label: 'Outros',      bg: '#F4F4F5', color: '#71717A' },
-};
+const EMPTY_FORM = { name: '', contactTypeIds: [] as string[], email: '', phone: '', cpf: '', birthDate: '', gender: '', source: '', status: 'NOVO', notes: '' };
 
-const EMPTY_FORM = { name: '', contactType: '', email: '', phone: '', cpf: '', birthDate: '', gender: '', source: '', status: 'NOVO', notes: '' };
-
-type FormErrors = { name?: string; contactType?: string; phone?: string; cpf?: string; birthDate?: string };
+type FormErrors = { name?: string; contactTypeIds?: string; phone?: string; cpf?: string; birthDate?: string };
 
 export function PatientsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const ni = () => toast('Funcionalidade ainda não implementada.', 'info');
+  const { canView } = usePermissions();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -73,6 +69,7 @@ export function PatientsPage() {
   });
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [inactivateConfirmId, setInactivateConfirmId] = useState<string | null>(null);
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => patientsApi.remove(id),
@@ -83,9 +80,34 @@ export function PatientsPage() {
     },
   });
 
+  const inactivateMut = useMutation({
+    mutationFn: (id: string) => patientsApi.update(id, { status: 'INATIVO' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['patients'] });
+      qc.invalidateQueries({ queryKey: ['patients-stats'] });
+      setInactivateConfirmId(null);
+      toast('Contato inativado com sucesso.', 'success');
+    },
+  });
+
   const isPending = createMut.isPending || updateMut.isPending;
 
+  const { data: contactTypes = [] } = useQuery({
+    queryKey: ['contact-types'],
+    queryFn: () => contactTypesApi.list(),
+  });
+
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const toggleContactType = (id: string) => {
+    setForm(f => ({
+      ...f,
+      contactTypeIds: f.contactTypeIds.includes(id)
+        ? f.contactTypeIds.filter(x => x !== id)
+        : [...f.contactTypeIds, id],
+    }));
+    setFormErrors(e => ({ ...e, contactTypeIds: undefined }));
+  };
 
   const openDrawer = () => {
     setForm(EMPTY_FORM);
@@ -97,16 +119,16 @@ export function PatientsPage() {
 
   const openEdit = (p: any) => {
     setForm({
-      name:        p.name        || '',
-      contactType: p.contactType || '',
-      email:       p.email       || '',
-      phone:       p.phone       || '',
-      cpf:         p.cpf         || '',
-      birthDate:   p.birthDate ? p.birthDate.slice(0, 10) : '',
-      gender:      p.gender      || '',
-      source:      p.source      || '',
-      status:      p.status      || 'NOVO',
-      notes:       p.notes       || '',
+      name:           p.name  || '',
+      contactTypeIds: (p.contactTypes ?? []).map((ct: any) => ct.contactTypeId),
+      email:          p.email || '',
+      phone:          p.phone || '',
+      cpf:            p.cpf   || '',
+      birthDate:      p.birthDate ? p.birthDate.slice(0, 10) : '',
+      gender:         p.gender || '',
+      source:         p.source || '',
+      status:         p.status || 'NOVO',
+      notes:          p.notes  || '',
     });
     setEditingId(p.id);
     setSaveError(null);
@@ -118,18 +140,19 @@ export function PatientsPage() {
 
   const validate = (): boolean => {
     const errs: FormErrors = {};
-    if (!form.name.trim())  errs.name        = 'Nome é obrigatório';
-    if (!form.contactType)  errs.contactType = 'Tipo de contato é obrigatório';
-    if (!form.phone.trim()) errs.phone       = 'Telefone é obrigatório';
-    if (!form.cpf.trim())   errs.cpf         = 'CPF é obrigatório';
-    if (!form.birthDate)    errs.birthDate   = 'Data de nascimento é obrigatória';
+    if (!form.name.trim())              errs.name           = 'Nome é obrigatório';
+    if (form.contactTypeIds.length === 0) errs.contactTypeIds = 'Selecione ao menos um tipo';
+    if (!form.phone.trim())             errs.phone          = 'Telefone é obrigatório';
+    if (!form.cpf.trim())               errs.cpf            = 'CPF é obrigatório';
+    if (!form.birthDate)                errs.birthDate      = 'Data de nascimento é obrigatória';
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const buildPayload = () => {
-    const payload: any = {};
-    for (const [k, v] of Object.entries(form)) {
+    const { contactTypeIds, ...rest } = form;
+    const payload: any = { contactTypeIds };
+    for (const [k, v] of Object.entries(rest)) {
       if (v === '') continue;
       payload[k] = k === 'birthDate' ? new Date(v + 'T12:00:00').toISOString() : v;
     }
@@ -232,16 +255,16 @@ export function PatientsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(248,249,250,0.7)', borderBottom: '1px solid #F1F3F5' }}>
-                {['Nome', 'Tipo de Contato', 'Telefone/WhatsApp', 'Status', 'Cadastro', 'Ações'].map((h, i) => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: i === 5 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#747686', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+                {['Nome', 'Tipo de Contato', 'Telefone/WhatsApp', 'Score', 'Status', 'Cadastro', 'Ações'].map((h, i) => (
+                  <th key={h} style={{ padding: '10px 16px', textAlign: i === 6 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#747686', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</td></tr>
+                <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</td></tr>
               ) : patients.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 48, textAlign: 'center' }}>
+                <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center' }}>
                   <i className="ti ti-users" style={{ fontSize: 36, display: 'block', margin: '0 auto 10px', color: '#D4D4D8' }} />
                   <div style={{ fontSize: 14, fontWeight: 500, color: '#71717A' }}>Nenhum contato encontrado</div>
                   <div style={{ fontSize: 12, color: '#A1A1AA', marginTop: 4 }}>Adicione o primeiro contato clicando no botão acima</div>
@@ -249,6 +272,8 @@ export function PatientsPage() {
               ) : patients.map((p: any) => {
                 const badge = STATUS_BADGE[p.status] || STATUS_BADGE.NOVO;
                 const initials = p.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
+                const { score } = calcPatientScore(p);
+                const sb = scoreBadge(score);
                 return (
                   <tr
                     key={p.id}
@@ -269,16 +294,25 @@ export function PatientsPage() {
                       </div>
                     </td>
                     <td style={{ padding: '10px 16px' }}>
-                      {(() => {
-                        const ct = CONTACT_TYPE[p.contactType] || CONTACT_TYPE.PACIENTE;
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 99, background: ct.bg, color: ct.color, border: `1px solid ${ct.color}20` }}>
-                            {ct.label}
-                          </span>
-                        );
-                      })()}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {(p.contactTypes ?? []).length > 0
+                          ? (p.contactTypes as any[]).map((ct: any) => (
+                              <span key={ct.id} style={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 99, background: ct.contactType?.color ? `${ct.contactType.color}20` : '#F4F4F5', color: ct.contactType?.color ?? '#71717A', border: `1px solid ${ct.contactType?.color ?? '#E4E4E7'}30` }}>
+                                {ct.contactType?.name ?? '—'}
+                              </span>
+                            ))
+                          : <span style={{ fontSize: 11, color: '#A1A1AA' }}>—</span>
+                        }
+                      </div>
                     </td>
                     <td style={{ padding: '10px 16px', fontSize: 13, color: '#444654' }}>{p.phone || '—'}</td>
+                    {/* Score */}
+                    <td style={{ padding: '10px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: sb.color, lineHeight: 1 }}>{score}</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 99, background: sb.bg, color: sb.color }}>{sb.label}</span>
+                      </div>
+                    </td>
                     <td style={{ padding: '10px 16px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 99, background: badge.bg, color: badge.color, border: `1px solid ${badge.color}20` }}>
                         <span style={{ width: 5, height: 5, borderRadius: '50%', background: badge.dot, flexShrink: 0 }} />
@@ -292,21 +326,30 @@ export function PatientsPage() {
                       </div>
                     </td>
                     <td style={{ padding: '10px 16px', textAlign: 'right' }}>
-                      <TableActions
-                        primaryAction={p.contactType === 'PACIENTE'
-                          ? { label: 'Prontuário', icon: 'ti-stethoscope', variant: 'blue', onClick: () => navigate(`/prontuario/${p.id}`) }
-                          : { label: 'Ver', icon: 'ti-eye', variant: 'default', onClick: () => navigate(`/patients/${p.id}`) }
-                        }
-                        secondaryActions={[
-                          { label: 'Ver detalhes', icon: 'ti-eye', onClick: () => navigate(`/patients/${p.id}`) },
-                          { label: 'Editar', icon: 'ti-pencil', onClick: () => openEdit(p) },
-                          { label: 'Agendar', icon: 'ti-calendar-plus', onClick: ni },
-                          { label: 'Financeiro', icon: 'ti-receipt', onClick: () => navigate(`/patients/${p.id}`) },
-                          { label: 'Histórico', icon: 'ti-history', onClick: () => navigate(`/patients/${p.id}`) },
-                          { label: 'Inativar', icon: 'ti-user-off', onClick: ni, separator: true },
-                          { label: 'Excluir contato', icon: 'ti-trash', variant: 'danger', onClick: () => setDeleteConfirmId(p.id), separator: false },
-                        ]}
-                      />
+                      {(() => {
+                        const isPaciente = (p.contactTypes ?? []).some(
+                          (ct: any) => ct.contactType?.name?.toLowerCase() === 'paciente'
+                        );
+                        const isInativo = p.status === 'INATIVO';
+                        return (
+                          <TableActions
+                            primaryAction={
+                              isPaciente && canView('medicalRecords')
+                                ? { label: 'Prontuário', icon: 'ti-clipboard-heart', variant: 'blue', onClick: () => navigate(`/prontuario/${p.id}`) }
+                                : { label: 'Ver detalhes', icon: 'ti-eye', variant: 'default', onClick: () => navigate(`/patients/${p.id}`) }
+                            }
+                            secondaryActions={[
+                              { label: 'Ver detalhes', icon: 'ti-eye', onClick: () => navigate(`/patients/${p.id}`) },
+                              { label: 'Editar', icon: 'ti-pencil', onClick: () => navigate(`/patients/${p.id}?edit=true`) },
+                              { label: 'Agendar', icon: 'ti-calendar-plus', onClick: () => navigate(`/agenda?newAppointment=true&patientId=${p.id}&patientName=${encodeURIComponent(p.name)}&patientPhone=${encodeURIComponent(p.phone || '')}`) },
+                              { label: 'Financeiro', icon: 'ti-receipt', onClick: () => navigate(`/patients/${p.id}?tab=Financeiro`) },
+                              { label: 'Histórico', icon: 'ti-history', onClick: () => navigate(`/patients/${p.id}?tab=Histórico`) },
+                              { label: isInativo ? 'Ativar contato' : 'Inativar contato', icon: isInativo ? 'ti-user-check' : 'ti-user-off', onClick: () => isInativo ? inactivateMut.mutate(p.id) : setInactivateConfirmId(p.id), separator: true },
+                              { label: 'Excluir contato', icon: 'ti-trash', variant: 'danger', onClick: () => setDeleteConfirmId(p.id) },
+                            ]}
+                          />
+                        );
+                      })()}
                     </td>
                   </tr>
                 );
@@ -340,7 +383,8 @@ export function PatientsPage() {
 
       {/* ── Drawer overlay + painel ── */}
       {drawerOpen && (
-        <>
+        <Portal>
+          <>
           {/* Backdrop */}
           <div
             className="drawer-overlay"
@@ -386,29 +430,38 @@ export function PatientsPage() {
                   {/* Tipo de Contato */}
                   <div>
                     <label className="lbl">Tipo de contato <span style={{ color: '#DC2626' }}>*</span></label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-                      {Object.entries(CONTACT_TYPE).map(([key, ct]) => {
-                        const selected = form.contactType === key;
-                        return (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => { set('contactType', key); setFormErrors(e => ({ ...e, contactType: undefined })); }}
-                            style={{
-                              padding: '8px 4px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
-                              fontSize: 12, fontWeight: 500, textAlign: 'center',
-                              border: selected ? `2px solid ${ct.color}` : '1.5px solid #E4E4E7',
-                              background: selected ? ct.bg : '#FAFAFA',
-                              color: selected ? ct.color : '#71717A',
-                              transition: 'all 0.15s',
-                            }}
-                          >
-                            {ct.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {formErrors.contactType && <p style={{ fontSize: 11, color: '#DC2626', marginTop: 5, marginBottom: 0 }}>{formErrors.contactType}</p>}
+                    {(contactTypes as any[]).length === 0 ? (
+                      <div style={{ padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, fontSize: 12, color: '#92400E' }}>
+                        Nenhum tipo cadastrado. Configure em <b>Configurações → Agenda → Tipos de Contato</b>.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {(contactTypes as any[]).map((ct: any) => {
+                          const selected = form.contactTypeIds.includes(ct.id);
+                          const color = ct.color ?? '#71717A';
+                          return (
+                            <button
+                              key={ct.id}
+                              type="button"
+                              onClick={() => toggleContactType(ct.id)}
+                              style={{
+                                padding: '6px 14px', borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
+                                fontSize: 12, fontWeight: 500,
+                                border: selected ? `2px solid ${color}` : '1.5px solid #E4E4E7',
+                                background: selected ? `${color}18` : '#FAFAFA',
+                                color: selected ? color : '#71717A',
+                                transition: 'all 0.12s',
+                                display: 'flex', alignItems: 'center', gap: 5,
+                              }}
+                            >
+                              {selected && <i className="ti ti-check" style={{ fontSize: 11 }} />}
+                              {ct.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {formErrors.contactTypeIds && <p style={{ fontSize: 11, color: '#DC2626', marginTop: 5, marginBottom: 0 }}>{formErrors.contactTypeIds}</p>}
                   </div>
 
                   {/* Nome */}
@@ -544,12 +597,14 @@ export function PatientsPage() {
               </div>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {deleteConfirmId && (
-        <>
+        <Portal>
+          <>
           <div onClick={() => setDeleteConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 300, backdropFilter: 'blur(2px)' }} />
           <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 301, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
@@ -575,7 +630,40 @@ export function PatientsPage() {
               </button>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
+      )}
+
+      {inactivateConfirmId && (
+        <Portal>
+          <>
+          <div onClick={() => setInactivateConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 300, backdropFilter: 'blur(2px)' }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 301, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <i className="ti ti-user-off" style={{ fontSize: 20, color: '#D97706' }} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#191C1D', marginBottom: 6 }}>Inativar contato?</div>
+            <div style={{ fontSize: 13, color: '#71717A', lineHeight: 1.5, marginBottom: 22 }}>
+              O contato ficará inativo e não aparecerá nas buscas padrão. Você poderá reativar a qualquer momento.
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setInactivateConfirmId(null)}
+                style={{ flex: 1, height: 40, border: '1px solid #E4E4E7', background: '#FFFFFF', borderRadius: 10, fontSize: 13, fontWeight: 500, color: '#191C1D', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => inactivateMut.mutate(inactivateConfirmId)}
+                disabled={inactivateMut.isPending}
+                style={{ flex: 1, height: 40, background: inactivateMut.isPending ? '#A1A1AA' : '#D97706', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: inactivateMut.isPending ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {inactivateMut.isPending ? 'Inativando...' : 'Inativar contato'}
+              </button>
+            </div>
+          </div>
+          </>
+        </Portal>
       )}
     </>
   );

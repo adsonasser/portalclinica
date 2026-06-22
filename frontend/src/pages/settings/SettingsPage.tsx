@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi } from '../../services/api';
+import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi, contactTypesApi } from '../../services/api';
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
 
@@ -1628,31 +1628,54 @@ function HolidaysView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
 }
 
 // ─── Contatos: Tipos ─────────────────────────────────────────────────────────
-const CTYPES_LS = 'pcl_contact_types';
-const DEFAULT_CTYPES = [
-  { id: 'ct_1', name: 'Paciente',    icon: 'ti-user-heart',    color: '#16A34A', active: true },
-  { id: 'ct_2', name: 'Prospect',   icon: 'ti-user-question', color: '#2563EB', active: true },
-  { id: 'ct_3', name: 'Fornecedor', icon: 'ti-truck',         color: '#D97706', active: true },
-  { id: 'ct_4', name: 'Parceiro',   icon: 'ti-handshake',     color: '#7C3AED', active: true },
-];
-type CType = typeof DEFAULT_CTYPES[0];
-function loadCTypes(): CType[] { try { const r = localStorage.getItem(CTYPES_LS); if (r) return JSON.parse(r); } catch {} return DEFAULT_CTYPES; }
-function saveCTypes(d: CType[]) { try { localStorage.setItem(CTYPES_LS, JSON.stringify(d)); } catch {} }
+const COLOR_OPTIONS = ['#2563EB','#16A34A','#D97706','#7C3AED','#DC2626','#0891B2','#DB2777','#71717A'];
 
 function ContactTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
-  const [types, setTypes] = useState<CType[]>(loadCTypes);
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState<CType | null>(null);
-  const [fName, setFName] = useState(''); const [fErr, setFErr] = useState('');
-  function openNew()  { setEditItem(null); setFName(''); setFErr(''); setShowForm(true); }
-  function openEdit(c: CType) { setEditItem(c); setFName(c.name); setFErr(''); setShowForm(true); }
+  const qc = useQueryClient();
+  const [showForm, setShowForm]   = useState(false);
+  const [editItem, setEditItem]   = useState<any | null>(null);
+  const [fName,    setFName]      = useState('');
+  const [fColor,   setFColor]     = useState(COLOR_OPTIONS[0]);
+  const [fErr,     setFErr]       = useState('');
+
+  const { data: types = [], isLoading } = useQuery({
+    queryKey: ['contact-types'],
+    queryFn:  () => contactTypesApi.list(),
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['contact-types'] });
+
+  const createMut = useMutation({
+    mutationFn: (d: any) => contactTypesApi.create(d),
+    onSuccess: () => { invalidate(); setShowForm(false); },
+    onError: () => setFErr('Erro ao criar. Tente novamente.'),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => contactTypesApi.update(id, data),
+    onSuccess: () => { invalidate(); setShowForm(false); },
+    onError: () => setFErr('Erro ao salvar. Tente novamente.'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => contactTypesApi.remove(id),
+    onSuccess: () => invalidate(),
+  });
+
+  function openNew()    { setEditItem(null); setFName(''); setFColor(COLOR_OPTIONS[0]); setFErr(''); setShowForm(true); }
+  function openEdit(t: any) { setEditItem(t); setFName(t.name); setFColor(t.color ?? COLOR_OPTIONS[0]); setFErr(''); setShowForm(true); }
+
   function handleSave() {
     if (!fName.trim()) { setFErr('Informe o nome.'); return; }
-    const upd = editItem ? types.map(t => t.id === editItem.id ? { ...t, name: fName.trim() } : t) : [...types, { id: `ct_${Date.now()}`, name: fName.trim(), icon: 'ti-user', color: '#71717A', active: true }];
-    setTypes(upd); saveCTypes(upd); setShowForm(false);
+    if (editItem) {
+      updateMut.mutate({ id: editItem.id, data: { name: fName.trim(), color: fColor } });
+    } else {
+      createMut.mutate({ name: fName.trim(), color: fColor });
+    }
   }
-  function handleDelete(id: string) { const u = types.filter(t => t.id !== id); setTypes(u); saveCTypes(u); }
-  function toggleActive(id: string) { const u = types.map(t => t.id === id ? { ...t, active: !t.active } : t); setTypes(u); saveCTypes(u); }
+
+  const isSaving = createMut.isPending || updateMut.isPending;
+
   return (
     <SubView title="Tipos de contatos" desc="Categorias para classificar e organizar contatos no sistema." icon="ti-tags" iconBg={mc.bg} iconColor={mc.color} parentLabel="Contatos" onBack={onBack}
       actions={<button onClick={openNew} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}><i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo tipo</button>}>
@@ -1660,29 +1683,63 @@ function ContactTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>{['Tipo', 'Status', 'Ações'].map((h, i) => <th key={h} style={{ padding: '9px 16px', textAlign: i === 2 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {types.map(t => (
+            {isLoading && <tr><td colSpan={3} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: '#A1A1AA' }}>Carregando...</td></tr>}
+            {!isLoading && (types as any[]).map((t: any) => (
               <tr key={t.id} style={{ borderBottom: '1px solid #F4F4F5' }} onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: 8, background: `${t.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className={`ti ${t.icon}`} style={{ fontSize: 15, color: t.color }} /></div><span style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{t.name}</span></div></td>
-                <td style={{ padding: '12px 16px' }}><button onClick={() => toggleActive(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}><span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: t.active ? '#DCFCE7' : '#F4F4F5', color: t.active ? '#16A34A' : '#71717A' }}>{t.active ? 'Ativo' : 'Inativo'}</span></button></td>
-                <td style={{ padding: '12px 16px', textAlign: 'right' }}><div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}><button onClick={() => openEdit(t)} style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-pencil" style={{ fontSize: 13, color: '#71717A' }} /></button><button onClick={() => handleDelete(t.id)} style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#FEF2F2')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-trash" style={{ fontSize: 13, color: '#EF4444' }} /></button></div></td>
+                <td style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: `${t.color ?? '#71717A'}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className="ti ti-tag" style={{ fontSize: 15, color: t.color ?? '#71717A' }} />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{t.name}</span>
+                  </div>
+                </td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: t.isActive ? '#DCFCE7' : '#F4F4F5', color: t.isActive ? '#16A34A' : '#71717A' }}>
+                    {t.isActive ? 'Ativo' : 'Inativo'}
+                  </span>
+                </td>
+                <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button onClick={() => openEdit(t)} style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-pencil" style={{ fontSize: 13, color: '#71717A' }} /></button>
+                    <button onClick={() => deleteMut.mutate(t.id)} disabled={deleteMut.isPending} style={{ width: 28, height: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseEnter={e => (e.currentTarget.style.background = '#FEF2F2')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}><i className="ti ti-trash" style={{ fontSize: 13, color: '#EF4444' }} /></button>
+                  </div>
+                </td>
               </tr>
             ))}
-            {types.length === 0 && <tr><td colSpan={3} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: '#A1A1AA' }}>Nenhum tipo.</td></tr>}
+            {!isLoading && (types as any[]).length === 0 && <tr><td colSpan={3} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: '#A1A1AA' }}>Nenhum tipo cadastrado.</td></tr>}
           </tbody>
         </table>
       </div>
       {showForm && (
         <>
           <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 380, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar tipo' : 'Novo tipo'}</div><button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button></div>
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar tipo' : 'Novo tipo'}</div>
+              <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
+            </div>
             <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div><label style={lblStyle}>Nome *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: Paciente, Prospect..." style={inpStyle} /></div>
+              <div>
+                <label style={lblStyle}>Nome *</label>
+                <input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: Paciente, Prospect..." style={inpStyle} />
+              </div>
+              <div>
+                <label style={lblStyle}>Cor</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {COLOR_OPTIONS.map(c => (
+                    <button key={c} type="button" onClick={() => setFColor(c)}
+                      style={{ width: 28, height: 28, borderRadius: '50%', background: c, border: fColor === c ? '3px solid #000' : '2px solid transparent', cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }} />
+                  ))}
+                </div>
+              </div>
               {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
             </div>
             <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
               <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-              <button onClick={handleSave} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar'}</button>
+              <button onClick={handleSave} disabled={isSaving} style={{ flex: 2, height: 38, background: isSaving ? '#A1A1AA' : '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: isSaving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {isSaving ? 'Salvando...' : (editItem ? 'Salvar' : 'Criar')}
+              </button>
             </div>
           </div>
         </>

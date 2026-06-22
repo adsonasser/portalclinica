@@ -85,6 +85,8 @@ export class SessionsService {
             endTime,
             status:        apptStatus as any,
             notes:         data.observations ?? undefined,
+            saleId:        session.saleId ?? undefined,
+            isFromPackage: true,
           },
         });
         await this.prisma.session.update({

@@ -430,6 +430,7 @@ model Appointment {
   notes             String?
   room              String?
   isReturn          Boolean               @default(false)
+  isFromPackage     Boolean               @default(false)
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
 
@@ -744,9 +745,10 @@ model Sale {
   saleType        String     @default("VENDA")
   total           Float      @default(0)
   discount        Float      @default(0)
-  paidAmount      Float      @default(0)
-  notes           String?
-  createdAt       DateTime   @default(now())
+  paidAmount        Float      @default(0)
+  hasFinancialIssue Boolean    @default(false)
+  notes             String?
+  createdAt         DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
   clinic        Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)

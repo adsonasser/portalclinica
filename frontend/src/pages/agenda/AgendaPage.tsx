@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { patientsApi, agendaApi, appointmentTypesApi, plansApi, financialApi } from '../../services/api';
 
@@ -41,6 +41,7 @@ interface Appt {
   room: string; phone: string; email: string; notes: string;
   dateOffset?: number;
   saleId?: string; saleStatus?: string; saleTotal?: number; salePaidAmount?: number;
+  isFromPackage?: boolean;
 }
 
 // ─── Status mapping ───────────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ function mapApiAppt(a: any, todayStart: Date): Appt {
     saleStatus: a.sale?.status || undefined,
     saleTotal: a.sale?.total,
     salePaidAmount: a.sale?.paidAmount,
+    isFromPackage: a.isFromPackage ?? false,
   };
 }
 
@@ -162,7 +164,7 @@ function maskBirthDate(v:string) {
 }
 
 interface SelPatient { id:string; name:string; phone:string; cpf?:string; email?:string; }
-interface NovoApptInitial { date?: Date; startTime?: string; profId?: string; roomName?: string; }
+interface NovoApptInitial { date?: Date; startTime?: string; profId?: string; roomName?: string; patientId?: string; patientName?: string; patientPhone?: string; }
 
 function calcEndTime(startTime: string, durationMin: number): string {
   const [sh, sm] = startTime.split(':').map(Number);
@@ -185,7 +187,11 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
   const [searchRes, setSearchRes] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [showDrop, setShowDrop]   = useState(false);
-  const [selPat, setSelPat]       = useState<SelPatient|null>(null);
+  const [selPat, setSelPat]       = useState<SelPatient|null>(
+    initialValues?.patientId
+      ? { id: initialValues.patientId, name: initialValues.patientName || '', phone: initialValues.patientPhone || '' }
+      : null
+  );
   const [savedMsg, setSavedMsg]   = useState('');
   const [dupWarn, setDupWarn]     = useState<{patient:any; field:string}|null>(null);
   const [savingPat, setSavingPat] = useState(false);
@@ -847,6 +853,7 @@ function ActionBtn({ icon, label, color, bg, onClick, active }: {
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function AgendaPage() {
   const navigate     = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient  = useQueryClient();
 
   const todayStart = useRef((() => {
@@ -913,6 +920,20 @@ export function AgendaPage() {
       profsLoadedRef.current = true;
     }
   }, [profs]);
+
+  // Open new appointment modal from URL params (?newAppointment=true&patientId=...)
+  const newApptParamFired = useRef(false);
+  useEffect(() => {
+    if (newApptParamFired.current) return;
+    if (searchParams.get('newAppointment') === 'true') {
+      newApptParamFired.current = true;
+      const patientId   = searchParams.get('patientId')   || undefined;
+      const patientName = searchParams.get('patientName') || undefined;
+      const patientPhone = searchParams.get('patientPhone') || undefined;
+      setNovoModalInitial({ patientId, patientName, patientPhone });
+      setShowNovoModal(true);
+    }
+  }, [searchParams]);
 
   // ── Fetch appointments ────────────────────────────────────────────────────
   const fetchStart = new Date(calYear, calMonth, 1).toISOString();
@@ -1065,7 +1086,10 @@ export function AgendaPage() {
         {tall && h>=64 && <div style={{ fontSize:10, color:'#71717A', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.type}</div>}
         {tall && h>=80 && <span style={{ display:'inline-block', marginTop:3, fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:99, background:st.border, color:st.text }}>{st.label}</span>}
         {!tall && <div style={{ fontSize:10, color:'#374151', lineHeight:1.2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.status==='bloqueado'?a.type:a.patient}</div>}
-        {a.saleId && tall && h >= 48 && (
+        {a.isFromPackage && tall && h >= 48 && (
+          <div style={{ position:'absolute', bottom:3, right:5, fontSize:8, fontWeight:700, padding:'1px 4px', borderRadius:3, background:'#7C3AED', color:'#FFF', lineHeight:1.4, letterSpacing:'.04em' }}>PKG</div>
+        )}
+        {!a.isFromPackage && a.saleId && tall && h >= 48 && (
           <div style={{ position:'absolute', bottom:3, right:5, width:7, height:7, borderRadius:'50%', background: a.saleStatus==='PAID'?'#16A34A':a.saleStatus==='PARTIAL'?'#D97706':'#A1A1AA', border:'1px solid rgba(255,255,255,0.8)' }} />
         )}
       </div>
@@ -1602,7 +1626,15 @@ export function AgendaPage() {
           <div style={{ padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Financeiro</div>
 
-            {a.saleId ? (
+            {a.isFromPackage && !a.saleId ? (
+              <div style={{ padding: '10px 12px', background: '#F5F3FF', borderRadius: 10, border: '1px solid #DDD6FE', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <i className="ti ti-package" style={{ fontSize: 14, color: '#7C3AED', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#6D28D9', marginBottom: 2 }}>Sessão de pacote</div>
+                  <div style={{ fontSize: 11, color: '#7C3AED', lineHeight: 1.5 }}>Este atendimento faz parte de um pacote já contratado. O lançamento financeiro é gerenciado pelo módulo de Sessões.</div>
+                </div>
+              </div>
+            ) : a.saleId ? (
               <div style={{ padding: '10px 12px', background: '#F9F9F9', borderRadius: 10, border: '1px solid #E4E4E7' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
@@ -2068,12 +2100,11 @@ export function AgendaPage() {
             {ctxMenu.apptId ? (
               <>
                 {[
-                  { label:'Abrir atendimento', icon:'ti-stethoscope', action:()=>{const a=appointments.find(x=>x.id===ctxMenu.apptId);if(a)window.alert(`Prontuário: ${a.patient}`);setCtxMenu(null);} },
-                  { label:'Reagendar',          icon:'ti-calendar-event', action:()=>setCtxMenu(null) },
-                  { label:'Duplicar',           icon:'ti-copy', action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a && !a.id.startsWith('blk_') && a.patientId) { const start=new Date(); start.setHours(a.sh,a.sm,0,0); const end=new Date(); end.setHours(a.eh,a.em,0,0); handleCreateAppt({patientId:a.patientId,professionalId:a.profId||null,startTime:start.toISOString(),endTime:end.toISOString(),status:'AGUARDANDO',notes:a.type}); } setCtxMenu(null); } },
-                  { label:'Ver paciente',       icon:'ti-user',  action:()=>setCtxMenu(null) },
-                  { label:'Histórico',          icon:'ti-history', action:()=>setCtxMenu(null) },
-                  { label:'Enviar lembrete',    icon:'ti-bell', action:()=>setCtxMenu(null) },
+                  { label:'Ver detalhes',       icon:'ti-eye',            action:()=>{ setSelectedId(ctxMenu!.apptId!); setCtxMenu(null); } },
+                  { label:'Reagendar',          icon:'ti-calendar-event', action:()=>{ setSelectedId(ctxMenu!.apptId!); setCtxMenu(null); } },
+                  { label:'Duplicar',           icon:'ti-copy',           action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a && !a.id.startsWith('blk_') && a.patientId) { const start=new Date(); start.setHours(a.sh,a.sm,0,0); const end=new Date(); end.setHours(a.eh,a.em,0,0); handleCreateAppt({patientId:a.patientId,professionalId:a.profId||null,startTime:start.toISOString(),endTime:end.toISOString(),status:'AGUARDANDO',notes:a.type}); } setCtxMenu(null); } },
+                  { label:'Ver paciente',       icon:'ti-user',           action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.patientId) navigate(`/patients/${a.patientId}`); setCtxMenu(null); } },
+                  { label:'Prontuário',         icon:'ti-notes-medical',  action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.patientId) navigate(`/prontuario/${a.patientId}`); setCtxMenu(null); } },
                   { label:'Enviar WhatsApp',    icon:'ti-brand-whatsapp', action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.phone) window.open(`https://wa.me/55${a.phone.replace(/\D/g,'')}`); setCtxMenu(null); } },
                 ].map((item,i)=>(
                   <div key={i} onClick={item.action}

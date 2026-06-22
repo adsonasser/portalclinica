@@ -101,6 +101,8 @@ export const financialApi = {
     api.patch(`/financial/transactions/${id}`, data).then((r) => r.data),
   receiveTransaction: (id: string, data: any) =>
     api.post(`/financial/transactions/${id}/receive`, data).then((r) => r.data),
+  cancelTransaction: (id: string, motivo?: string) =>
+    api.post(`/financial/transactions/${id}/cancel`, { motivo }).then((r) => r.data),
   deleteTransaction: (id: string) =>
     api.delete(`/financial/transactions/${id}`).then((r) => r.data),
   categories: () => api.get('/financial/categories').then((r) => r.data),

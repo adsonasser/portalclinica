@@ -33,8 +33,10 @@ export class FinancialService {
   }
 
   async createTransaction(clinicId: string, data: any) {
+    const amount = parseFloat(data.amount);
+    if (!isFinite(amount) || amount <= 0) throw new BadRequestException('Informe um valor válido.');
     return this.prisma.financialTransaction.create({
-      data: { ...data, clinicId },
+      data: { ...data, clinicId, amount },
       include: TX_INCLUDE,
     });
   }
@@ -100,6 +102,34 @@ export class FinancialService {
       }
 
       return updated;
+    });
+  }
+
+  async cancelTransaction(clinicId: string, id: string, motivo?: string) {
+    const tx = await this.findTransactionOne(clinicId, id);
+    if (tx.status === 'CANCELLED') throw new BadRequestException('Transação já cancelada');
+
+    return this.prisma.$transaction(async (p) => {
+      const noteText = motivo ? `[Cancelado] ${motivo}` : '[Cancelado]';
+      const cancelled = await p.financialTransaction.update({
+        where: { id },
+        data: { status: 'CANCELLED', notes: noteText },
+        include: TX_INCLUDE,
+      });
+
+      if (tx.status === 'PAID' && tx.type === 'INCOME' && tx.saleId) {
+        const sale = await p.sale.findUnique({ where: { id: tx.saleId } });
+        if (sale && sale.status !== 'CANCELLED') {
+          const newPaid = Math.max(0, (sale.paidAmount ?? 0) - tx.amount);
+          const newStatus = newPaid <= 0 ? 'PENDING' : newPaid >= sale.total ? 'PAID' : 'PARTIAL';
+          await p.sale.update({
+            where: { id: tx.saleId },
+            data: { paidAmount: newPaid, status: newStatus as any, hasFinancialIssue: true },
+          });
+        }
+      }
+
+      return cancelled;
     });
   }
 

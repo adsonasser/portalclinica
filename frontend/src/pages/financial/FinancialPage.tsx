@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { salesApi, financialApi } from '../../services/api';
+import { salesApi, financialApi, patientsApi } from '../../services/api';
 import { NovaVendaModal } from '../../components/NovaVendaModal';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
@@ -19,6 +19,9 @@ interface Sale {
   item: string; desc: string;
   total: number; received: number; open: number;
   type: SaleType; status: SaleStatus;
+  hasFinancialIssue: boolean;
+  createdAt: Date;
+  raw: any;
 }
 
 interface Conta {
@@ -51,17 +54,21 @@ interface Conta {
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 function mapApiSale(s: any): Sale {
   return {
-    id:       s.id,
-    date:     new Date(s.createdAt).toLocaleDateString('pt-BR'),
-    patient:  s.patient?.name || 'Desconhecido',
-    phone:    s.patient?.phone || '—',
-    item:     s.items?.[0]?.name || 'Procedimento',
-    desc:     s.notes || '',
-    total:    s.total,
-    received: s.paidAmount ?? 0,
-    open:     Math.max(0, s.total - (s.paidAmount ?? 0)),
-    type:     s.saleType === 'ORCAMENTO' ? 'orcamento' : 'venda',
-    status:   s.status === 'PAID' ? 'pago' : s.status === 'PARTIAL' ? 'parcial' : s.status === 'CANCELLED' ? 'cancelado' : 'nao_recebido',
+    id:                s.id,
+    date:              new Date(s.createdAt).toLocaleDateString('pt-BR'),
+    patient:           s.patient?.name || 'Desconhecido',
+    patientId:         s.patientId || s.patient?.id,
+    phone:             s.patient?.phone || '—',
+    item:              s.items?.[0]?.name || 'Procedimento',
+    desc:              s.notes || '',
+    total:             s.total,
+    received:          s.paidAmount ?? 0,
+    open:              Math.max(0, s.total - (s.paidAmount ?? 0)),
+    type:              s.saleType === 'ORCAMENTO' ? 'orcamento' : 'venda',
+    status:            s.status === 'PAID' ? 'pago' : s.status === 'PARTIAL' ? 'parcial' : s.status === 'CANCELLED' ? 'cancelado' : 'nao_recebido',
+    hasFinancialIssue: s.hasFinancialIssue ?? false,
+    createdAt:         new Date(s.createdAt),
+    raw:               s,
   };
 }
 
@@ -158,6 +165,125 @@ const CONF_STATUS: Record<ContaConferencia, { bg:string; color:string; label:str
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
 const inp: React.CSSProperties = { width:'100%', height:38, padding:'0 12px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, color:'#09090B', background:'#FFFFFF', outline:'none', boxSizing:'border-box', fontFamily:'inherit' };
 const lbl: React.CSSProperties = { display:'block', fontSize:12, fontWeight:500, color:'#71717A', marginBottom:5 };
+
+// ─── Period helpers ───────────────────────────────────────────────────────────
+type PeriodKey = 'all_time' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'last_30' | 'last_month' | 'custom';
+
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: 'all_time',   label: 'Todos os períodos' },
+  { key: 'today',      label: 'Hoje' },
+  { key: 'yesterday',  label: 'Ontem' },
+  { key: 'this_week',  label: 'Esta semana' },
+  { key: 'this_month', label: 'Este mês' },
+  { key: 'last_30',    label: 'Últimos 30 dias' },
+  { key: 'last_month', label: 'Mês passado' },
+  { key: 'custom',     label: 'Personalizado' },
+];
+
+function computePeriodRange(period: PeriodKey, customStart?: string, customEnd?: string): { start: Date; end: Date } {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eod   = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+  if (period === 'all_time')  return { start: new Date(0), end: new Date(9999, 11, 31) };
+  if (period === 'today')     return { start: today, end: eod(today) };
+  if (period === 'yesterday') {
+    const y = new Date(today); y.setDate(y.getDate() - 1);
+    return { start: y, end: eod(y) };
+  }
+  if (period === 'this_week') {
+    const dow  = today.getDay();
+    const mon  = new Date(today); mon.setDate(today.getDate() - dow + (dow === 0 ? -6 : 1));
+    return { start: mon, end: eod(today) };
+  }
+  if (period === 'this_month') {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: eod(today) };
+  }
+  if (period === 'last_30') {
+    const s = new Date(today); s.setDate(s.getDate() - 29);
+    return { start: s, end: eod(today) };
+  }
+  if (period === 'last_month') {
+    const s = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const e = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { start: s, end: eod(e) };
+  }
+  // custom
+  const s = customStart ? new Date(customStart + 'T00:00:00') : today;
+  const e = customEnd   ? new Date(customEnd   + 'T23:59:59') : eod(today);
+  return { start: s, end: e };
+}
+
+function periodLabel(period: PeriodKey, customStart?: string, customEnd?: string): string {
+  if (period === 'custom') {
+    const fmtD = (d?: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '?';
+    return `${fmtD(customStart)} - ${fmtD(customEnd)}`;
+  }
+  return PERIOD_OPTIONS.find(p => p.key === period)?.label || '';
+}
+
+function isPendingFinancialEntry(c: Conta): boolean {
+  if (c.rawStatus === 'CANCELLED') return false;
+  if (c.rawStatus === 'PENDING')   return true;
+  if (c.rawStatus === 'PAID') return c.statusConferencia === 'PENDENTE' || c.statusConferencia === 'DIVERGENTE';
+  return false;
+}
+
+// ─── Period Dropdown ──────────────────────────────────────────────────────────
+function PeriodDropdown({ period, customStart, customEnd, onChange }: {
+  period: PeriodKey;
+  customStart: string;
+  customEnd: string;
+  onChange: (period: PeriodKey, customStart?: string, customEnd?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref             = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const label = periodLabel(period, customStart, customEnd);
+
+  return (
+    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
+      <button onClick={() => setOpen(v => !v)}
+        style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', borderRadius:99, fontSize:12, fontWeight:500, color:'#09090B', background:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit', whiteSpace:'nowrap' }}>
+        <i className="ti ti-calendar" style={{ fontSize:13, color:'#71717A' }} />
+        {label}
+        <i className="ti ti-chevron-down" style={{ fontSize:11, color:'#A1A1AA', transform:open?'rotate(180deg)':'none', transition:'transform .15s' }} />
+      </button>
+      {open && (
+        <div style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:200, background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', boxShadow:'0 8px 24px rgba(0,0,0,0.10)', padding:'6px', minWidth:190, animation:'fadeUp .12s ease' }}>
+          {PERIOD_OPTIONS.map(opt => (
+            <button key={opt.key} onClick={() => { onChange(opt.key, customStart, customEnd); if (opt.key !== 'custom') setOpen(false); }}
+              style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', padding:'8px 12px', borderRadius:8, border:'none', fontSize:12, fontWeight:period===opt.key?600:400, color:period===opt.key?'#09090B':'#374151', background:period===opt.key?'#F4F4F5':'transparent', cursor:'pointer', fontFamily:'inherit', textAlign:'left' }}>
+              {opt.label}
+              {period === opt.key && <i className="ti ti-check" style={{ fontSize:12, color:'#09090B' }} />}
+            </button>
+          ))}
+          {period === 'custom' && (
+            <div style={{ padding:'8px 8px 4px', borderTop:'1px solid #F4F4F5', marginTop:4, display:'flex', flexDirection:'column', gap:6 }}>
+              <div style={{ fontSize:10, fontWeight:600, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.05em' }}>Intervalo personalizado</div>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <input type="date" value={customStart} onChange={e => onChange('custom', e.target.value, customEnd)}
+                  style={{ flex:1, height:30, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:6, fontSize:11, color:'#09090B', background:'#FFFFFF', outline:'none', fontFamily:'inherit' }} />
+                <span style={{ fontSize:11, color:'#A1A1AA' }}>—</span>
+                <input type="date" value={customEnd} onChange={e => onChange('custom', customStart, e.target.value)}
+                  style={{ flex:1, height:30, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:6, fontSize:11, color:'#09090B', background:'#FFFFFF', outline:'none', fontFamily:'inherit' }} />
+              </div>
+              <button onClick={() => setOpen(false)}
+                style={{ height:28, background:'#000', border:'none', borderRadius:6, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>Aplicar</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function currentUserName(): string {
   try { return JSON.parse(localStorage.getItem('user') || '{}').name || 'Usuário'; } catch { return 'Usuário'; }
@@ -492,14 +618,17 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
   const accentColor = isReceita ? '#16A34A' : '#DC2626';
   const accentBg    = isReceita ? '#DCFCE7' : '#FEF2F2';
 
-  const [contactName, setContactName] = useState('');
-  const [descricao,   setDescricao]   = useState('');
-  const [valor,       setValor]       = useState('');
-  const [dueDate,     setDueDate]     = useState('');
-  const [dreId,       setDreId]       = useState('');
-  const [pmId,        setPmId]        = useState('');
-  const [referencia,  setReferencia]  = useState('');
-  const [error,       setError]       = useState('');
+  const [contactName, setContactName]   = useState('');
+  const [suggestions, setSuggestions]   = useState<any[]>([]);
+  const [showSugg,    setShowSugg]      = useState(false);
+  const [descricao,   setDescricao]     = useState('');
+  const [valor,       setValor]         = useState('');
+  const [dueDate,     setDueDate]       = useState('');
+  const [dreId,       setDreId]         = useState('');
+  const [pmId,        setPmId]          = useState('');
+  const [referencia,  setReferencia]    = useState('');
+  const [error,       setError]         = useState('');
+  const suggRef = useRef<HTMLDivElement>(null);
 
   const dreAccounts = getDreAccounts().filter(d => d.type === mode);
 
@@ -508,6 +637,27 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
     queryFn: () => financialApi.paymentMethods(),
   });
 
+  // Debounced patient search
+  useEffect(() => {
+    if (contactName.length < 2) { setSuggestions([]); setShowSugg(false); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await patientsApi.list({ search: contactName });
+        const list = (res as any[]).slice(0, 6);
+        setSuggestions(list);
+        setShowSugg(list.length > 0);
+      } catch { setSuggestions([]); }
+    }, 280);
+    return () => clearTimeout(t);
+  }, [contactName]);
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (suggRef.current && !suggRef.current.contains(e.target as Node)) setShowSugg(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
   const saveMut = useMutation({
     mutationFn: (data: any) => financialApi.createTransaction(data),
     onSuccess: () => {
@@ -515,21 +665,27 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
       qc.invalidateQueries({ queryKey: ['financial-summary'] });
       onClose();
     },
-    onError: () => setError('Erro ao salvar. Tente novamente.'),
+    onError: (err: any) => {
+      console.error('[NovaLancamento] erro ao salvar:', err?.response?.data ?? err?.message ?? err);
+      const msg = err?.response?.data?.message;
+      setError(msg ? `Erro: ${Array.isArray(msg) ? msg.join(', ') : msg}` : 'Erro ao salvar. Tente novamente.');
+    },
   });
 
   const handleSave = () => {
-    if (!contactName.trim()) { setError('Informe a pessoa ou empresa.'); return; }
-    if (!descricao.trim())   { setError('Informe a descrição.'); return; }
-    if (!valor || Number(valor) <= 0) { setError('Informe um valor válido.'); return; }
+    if (!descricao.trim()) { setError('Informe a descrição.'); return; }
+    const parsedAmount = parseFloat(String(valor).replace(',', '.'));
+    if (!valor.trim() || !isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError('Informe um valor válido.'); return;
+    }
     setError('');
     const selectedDre = dreAccounts.find(d => d.id === dreId);
     saveMut.mutate({
       type: isReceita ? 'INCOME' : 'EXPENSE',
       status: 'PENDING',
       description: descricao.trim(),
-      contactName: contactName.trim(),
-      amount: Number(valor),
+      contactName: contactName.trim() || undefined,
+      amount: parsedAmount,
       dueDate: dueDate || undefined,
       paymentMethodId: pmId || undefined,
       notes: [referencia, selectedDre ? `DRE: ${selectedDre.name}` : ''].filter(Boolean).join(' | ') || undefined,
@@ -572,12 +728,33 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
             </select>
           </div>
 
-          {/* Pessoa */}
-          <div>
-            <label style={lbl}>{isReceita ? 'Paciente / Origem' : 'Fornecedor / Destino'} <span style={{ color:'#DC2626' }}>*</span></label>
-            <input value={contactName} onChange={e => setContactName(e.target.value)}
-              placeholder={isReceita ? 'Nome do paciente ou origem...' : 'Nome do fornecedor...'}
+          {/* Pessoa (opcional, com autocomplete) */}
+          <div ref={suggRef} style={{ position:'relative' }}>
+            <label style={lbl}>{isReceita ? 'Paciente / Origem' : 'Fornecedor / Destino'}</label>
+            <input value={contactName}
+              onChange={e => setContactName(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSugg(true); }}
+              placeholder={isReceita ? 'Buscar contato ou informar origem...' : 'Buscar contato, fornecedor ou informar destino...'}
               style={inp} />
+            {showSugg && suggestions.length > 0 && (
+              <div style={{ position:'absolute', top:'100%', left:0, right:0, zIndex:500, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.10)', overflow:'hidden', marginTop:4 }}>
+                {suggestions.map((p: any) => (
+                  <div key={p.id}
+                    onClick={() => { setContactName(p.name); setShowSugg(false); setSuggestions([]); }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background='#F9F9F9'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background='transparent'}
+                    style={{ padding:'9px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid #F4F4F5' }}>
+                    <div style={{ width:28, height:28, borderRadius:'50%', background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:600, color:'#71717A', flexShrink:0 }}>
+                      {(p.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>{p.name}</div>
+                      {p.phone && <div style={{ fontSize:11, color:'#71717A' }}>{p.phone}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Descrição */}
@@ -592,7 +769,8 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
             <div>
               <label style={lbl}>Valor <span style={{ color:'#DC2626' }}>*</span></label>
-              <input type="number" min={0} step={0.01} value={valor} onChange={e => setValor(e.target.value)}
+              <input type="text" inputMode="decimal" value={valor}
+                onChange={e => setValor(e.target.value.replace(/[^0-9.,]/g, ''))}
                 placeholder="0,00" style={inp} />
             </div>
             <div>
@@ -644,7 +822,7 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
   );
 }
 
-// ─── Modal: Pagar / Receber conta ─────────────────────────────────────────────
+// ─── Painel: Pagar / Receber conta ────────────────────────────────────────────
 function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
   const qc          = useQueryClient();
   const isPagar     = conta.tipo === 'pagar';
@@ -678,50 +856,68 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:400, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:460, background:'#FFFFFF', borderRadius:14, zIndex:401, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease' }}>
-        <div style={{ padding:'18px 22px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:400 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:401, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>{isPagar ? 'Registrar pagamento' : 'Registrar recebimento'}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>{isPagar ? 'Pagar lançamento' : 'Registrar recebimento'}</div>
             <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.pessoa} — {conta.descricao}</div>
           </div>
-          <button onClick={onClose} style={{ width:28, height:28, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
+          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
             <i className="ti ti-x" style={{ fontSize:13 }} />
           </button>
         </div>
-        <div style={{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:14 }}>
-          <div style={{ background:accentBg, borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-            <div>
-              <div style={{ fontSize:12, color:'#374151' }}>{conta.descricao}</div>
-              <div style={{ fontSize:11, color:'#A1A1AA', marginTop:2 }}>{conta.referencia} · {conta.pessoa}</div>
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Resumo */}
+          <div style={{ background:accentBg, borderRadius:10, padding:'14px 16px', border:`1px solid ${isPagar?'#FECACA':'#BBF7D0'}` }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Resumo do lançamento</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { label:'Pessoa / contato', value: conta.pessoa },
+                { label:'Descrição',        value: conta.descricao },
+                { label:'Valor em aberto',  value: fmt(conta.valor) },
+                { label:'Vencimento',       value: conta.dueDateStr || '—' },
+                { label:'Status atual',     value: CONTA_STATUS[conta.status]?.label || conta.status },
+              ].map(r => (
+                <div key={r.label}>
+                  <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:accentColor }}>{r.value}</div>
+                </div>
+              ))}
             </div>
-            <div style={{ fontSize:20, fontWeight:700, color:accentColor }}>{fmt(conta.valor)}</div>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div>
-              <label style={lbl}>Valor {isPagar ? 'pago' : 'recebido'} <span style={{color:'#DC2626'}}>*</span></label>
-              <input type="number" min={0} step={0.01} value={amount} onChange={e => setAmount(e.target.value)} style={inp} />
-            </div>
-            <div>
-              <label style={lbl}>Forma de pagamento</label>
-              <select value={pmId} onChange={e => setPmId(e.target.value)} style={{ ...inp, height:38, cursor:'pointer' }}>
-                <option value="">Não informado</option>
-                {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Data {isPagar ? 'do pagamento' : 'do recebimento'}</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+          {/* Campos */}
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:12 }}>Dados do {isPagar ? 'pagamento' : 'recebimento'}</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+              <div>
+                <label style={lbl}>Valor {isPagar ? 'pago' : 'recebido'} <span style={{color:'#DC2626'}}>*</span></label>
+                <input type="number" min={0} step={0.01} value={amount} onChange={e => setAmount(e.target.value)} style={inp} />
+              </div>
+              <div>
+                <label style={lbl}>Data {isPagar ? 'do pagamento' : 'do recebimento'}</label>
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <label style={lbl}>Forma de pagamento</label>
+                <select value={pmId} onChange={e => setPmId(e.target.value)} style={{ ...inp, height:38, cursor:'pointer' }}>
+                  <option value="">Não informado</option>
+                  {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
             </div>
           </div>
           {error && <div style={{ fontSize:12, color:'#DC2626', padding:'8px 12px', background:'#FEF2F2', borderRadius:8, border:'1px solid #FECACA' }}>{error}</div>}
         </div>
-        <div style={{ padding:'14px 22px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA' }}>
+        {/* Footer */}
+        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
           <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
           <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
             style={{ flex:2, height:40, background:saveMut.isPending?'#A1A1AA':accentColor, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:saveMut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
             <i className={`ti ${isPagar?'ti-check':'ti-circle-check'}`} style={{ fontSize:14 }} />
-            {saveMut.isPending ? 'Registrando...' : isPagar ? 'Registrar pagamento' : 'Registrar recebimento'}
+            {saveMut.isPending ? 'Registrando...' : isPagar ? 'Confirmar pagamento' : 'Confirmar recebimento'}
           </button>
         </div>
       </div>
@@ -885,17 +1081,20 @@ function DetalhePanel({
   );
 }
 
-// ─── Modal: Confirmar conferência ─────────────────────────────────────────────
+// ─── Painel: Conferir lançamento ──────────────────────────────────────────────
 function ConfirmarConferenciaModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
-  const qc     = useQueryClient();
-  const [ok, setOk] = useState(false);
+  const qc           = useQueryClient();
+  const [obs, setObs] = useState('');
+  const [ok,  setOk]  = useState(false);
+  const st = CONTA_STATUS[conta.status];
+  const cs = CONF_STATUS[conta.statusConferencia];
 
   const mut = useMutation({
     mutationFn: () => financialApi.updateTransaction(conta.id, {
-      statusConferencia: 'CONFERIDO',
-      dataConferencia:   new Date().toISOString(),
+      statusConferencia:  'CONFERIDO',
+      dataConferencia:    new Date().toISOString(),
       usuarioConferencia: currentUserName(),
-      motivoDivergencia: null,
+      motivoDivergencia:  null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
@@ -906,46 +1105,87 @@ function ConfirmarConferenciaModal({ conta, onClose }: { conta: Conta; onClose: 
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:420, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease', padding:'28px 28px 20px' }}>
-        {ok ? (
-          <div style={{ textAlign:'center', padding:'8px 0 16px' }}>
-            <div style={{ width:52, height:52, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
-              <i className="ti ti-circle-check" style={{ fontSize:26, color:'#16A34A' }} />
-            </div>
-            <div style={{ fontSize:15, fontWeight:700, color:'#09090B' }}>Lançamento conferido com sucesso!</div>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>Conferir lançamento</div>
+            <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.pessoa}</div>
           </div>
-        ) : (
-          <>
-            <div style={{ width:48, height:48, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
-              <i className="ti ti-circle-check" style={{ fontSize:22, color:'#16A34A' }} />
+          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
+            <i className="ti ti-x" style={{ fontSize:13 }} />
+          </button>
+        </div>
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {ok ? (
+            <div style={{ textAlign:'center', padding:'48px 0' }}>
+              <div style={{ width:56, height:56, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px' }}>
+                <i className="ti ti-circle-check" style={{ fontSize:28, color:'#16A34A' }} />
+              </div>
+              <div style={{ fontSize:15, fontWeight:700, color:'#09090B' }}>Lançamento conferido!</div>
+              <div style={{ fontSize:12, color:'#71717A', marginTop:4 }}>O registro foi atualizado com sucesso.</div>
             </div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#09090B', marginBottom:6 }}>Confirmar conferência</div>
-            <div style={{ fontSize:13, color:'#71717A', marginBottom:4, lineHeight:1.6 }}>
-              Confirmar que o lançamento <b style={{color:'#09090B'}}>{conta.descricao}</b> de <b style={{color:'#16A34A'}}>{fmt(conta.valor)}</b> foi conferido no caixa/extrato?
-            </div>
-            <div style={{ fontSize:12, color:'#A1A1AA', marginBottom:20 }}>
-              Será registrado como conferido por <b>{currentUserName()}</b> em {new Date().toLocaleString('pt-BR')}.
-            </div>
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
-              <button onClick={() => mut.mutate()} disabled={mut.isPending}
-                style={{ flex:2, height:40, background:mut.isPending?'#A1A1AA':'#16A34A', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-                <i className="ti ti-circle-check" style={{ fontSize:14 }} /> Confirmar conferência
-              </button>
-            </div>
-          </>
+          ) : (
+            <>
+              {/* Resumo */}
+              <div style={{ background:'#DCFCE7', borderRadius:10, padding:'14px 16px', border:'1px solid #BBF7D0' }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Dados do lançamento</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  {[
+                    { label:'Data',              value: conta.paidAtStr || conta.vencimento },
+                    { label:'Pessoa / contato',  value: conta.pessoa },
+                    { label:'Descrição',         value: conta.descricao },
+                    { label:'Forma de pagamento',value: conta.formaPagamento },
+                    { label:'Valor',             value: fmt(conta.valor) },
+                    { label:'Status financeiro', value: st?.label || '—' },
+                    { label:'Conf. atual',       value: cs?.label || '—' },
+                  ].map(r => (
+                    <div key={r.label}>
+                      <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                      <div style={{ fontSize:13, fontWeight:600, color:'#15803D' }}>{r.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Info */}
+              <div style={{ background:'#F8FAFC', borderRadius:8, padding:'12px 14px', border:'1px solid #E4E4E7', fontSize:12, color:'#71717A', lineHeight:1.6 }}>
+                <i className="ti ti-info-circle" style={{ fontSize:13, marginRight:6, color:'#2563EB' }} />
+                Será registrado como conferido por <b style={{color:'#09090B'}}>{currentUserName()}</b> em {new Date().toLocaleString('pt-BR')}.
+              </div>
+              {/* Observação */}
+              <div>
+                <label style={lbl}>Observação da conferência (opcional)</label>
+                <textarea value={obs} onChange={e => setObs(e.target.value)} rows={3}
+                  placeholder="Notas sobre a conferência..."
+                  style={{ ...inp, height:'auto', padding:'8px 12px', resize:'vertical' as const }} />
+              </div>
+            </>
+          )}
+        </div>
+        {/* Footer */}
+        {!ok && (
+          <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
+            <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
+            <button onClick={() => mut.mutate()} disabled={mut.isPending}
+              style={{ flex:2, height:40, background:mut.isPending?'#A1A1AA':'#16A34A', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+              <i className="ti ti-circle-check" style={{ fontSize:14 }} />
+              {mut.isPending ? 'Conferindo...' : 'Confirmar conferência'}
+            </button>
+          </div>
         )}
       </div>
     </>
   );
 }
 
-// ─── Modal: Marcar divergente ─────────────────────────────────────────────────
+// ─── Painel: Marcar divergente ────────────────────────────────────────────────
 function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
   const qc      = useQueryClient();
   const [motivo, setMotivo] = useState('');
   const [custom, setCustom] = useState('');
+  const [obsInt, setObsInt] = useState('');
   const [error,  setError]  = useState('');
 
   const MOTIVOS = [
@@ -984,23 +1224,45 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:440, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease' }}>
-        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
             <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>Marcar como divergente</div>
             <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.descricao} — {fmt(conta.valor)}</div>
           </div>
-          <button onClick={onClose} style={{ width:28, height:28, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
+          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
             <i className="ti ti-x" style={{ fontSize:13 }} />
           </button>
         </div>
-        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Resumo */}
+          <div style={{ background:'#FEF2F2', borderRadius:10, padding:'14px 16px', border:'1px solid #FECACA' }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Dados do lançamento</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { label:'Data',         value: conta.paidAtStr || conta.vencimento },
+                { label:'Contato',      value: conta.pessoa },
+                { label:'Descrição',    value: conta.descricao },
+                { label:'Valor',        value: fmt(conta.valor) },
+                { label:'Forma',        value: conta.formaPagamento },
+                { label:'Status conf.', value: CONF_STATUS[conta.statusConferencia]?.label || '—' },
+              ].map(r => (
+                <div key={r.label}>
+                  <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#DC2626' }}>{r.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Motivos */}
           <div>
             <label style={lbl}>Motivo da divergência <span style={{color:'#DC2626'}}>*</span></label>
             <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
               {MOTIVOS.map(m => (
-                <label key={m} style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color: motivo === m ? '#09090B' : '#374151', cursor:'pointer', padding:'8px 12px', borderRadius:8, border:`1px solid ${motivo===m?'#DC2626':'#E4E4E7'}`, background:motivo===m?'#FEF2F2':'#FFFFFF' }}>
+                <label key={m} style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color: motivo === m ? '#09090B' : '#374151', cursor:'pointer', padding:'10px 12px', borderRadius:8, border:`1px solid ${motivo===m?'#DC2626':'#E4E4E7'}`, background:motivo===m?'#FEF2F2':'#FFFFFF' }}>
                   <input type="radio" name="motivo" value={m} checked={motivo === m} onChange={() => setMotivo(m)} style={{ accentColor:'#DC2626', cursor:'pointer' }} />
                   {m}
                 </label>
@@ -1013,13 +1275,21 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
               <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="Descreva o motivo da divergência..." style={inp} />
             </div>
           )}
+          <div>
+            <label style={lbl}>Observações internas (opcional)</label>
+            <textarea value={obsInt} onChange={e => setObsInt(e.target.value)} rows={2}
+              placeholder="Anotações para uso interno..."
+              style={{ ...inp, height:'auto', padding:'8px 12px', resize:'vertical' as const }} />
+          </div>
           {error && <div style={{ fontSize:12, color:'#DC2626', padding:'8px 12px', background:'#FEF2F2', borderRadius:8, border:'1px solid #FECACA' }}>{error}</div>}
         </div>
-        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA' }}>
+        {/* Footer */}
+        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
           <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
           <button onClick={handleSave} disabled={mut.isPending}
             style={{ flex:2, height:40, background:mut.isPending?'#A1A1AA':'#DC2626', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-            <i className="ti ti-alert-triangle" style={{ fontSize:14 }} /> {mut.isPending ? 'Salvando...' : 'Salvar divergência'}
+            <i className="ti ti-alert-triangle" style={{ fontSize:14 }} />
+            {mut.isPending ? 'Salvando...' : 'Marcar como divergente'}
           </button>
         </div>
       </div>
@@ -1027,34 +1297,107 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
   );
 }
 
-// ─── Modal: Cancelar lançamento ───────────────────────────────────────────────
+// ─── Painel: Cancelar lançamento ──────────────────────────────────────────────
 function CancelarModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
-  const qc  = useQueryClient();
+  const qc              = useQueryClient();
+  const [motivo, setMotivo] = useState('');
+  const [error,  setError]  = useState('');
+  const isPaidIncome        = conta.rawStatus === 'PAID' && conta.rawType === 'INCOME';
+
   const mut = useMutation({
-    mutationFn: () => financialApi.updateTransaction(conta.id, { status: 'CANCELLED' }),
+    mutationFn: () => financialApi.cancelTransaction(conta.id, motivo.trim() || undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['financial-summary'] });
+      qc.invalidateQueries({ queryKey: ['all-sales'] });
       onClose();
     },
+    onError: () => setError('Erro ao cancelar. Tente novamente.'),
   });
+
+  const handleConfirm = () => {
+    if (!motivo.trim()) { setError('Informe o motivo do cancelamento.'); return; }
+    setError('');
+    mut.mutate();
+  };
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:400, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease', padding:'28px 28px 20px' }}>
-        <div style={{ width:48, height:48, borderRadius:'50%', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
-          <i className="ti ti-ban" style={{ fontSize:22, color:'#DC2626' }} />
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>Cancelar lançamento financeiro</div>
+            <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
+            <i className="ti ti-x" style={{ fontSize:13 }} />
+          </button>
         </div>
-        <div style={{ fontSize:16, fontWeight:700, color:'#09090B', marginBottom:6 }}>Cancelar lançamento?</div>
-        <div style={{ fontSize:13, color:'#71717A', marginBottom:20, lineHeight:1.6 }}>
-          O lançamento <b style={{color:'#09090B'}}>{conta.descricao}</b> de <b style={{color:'#DC2626'}}>{fmt(conta.valor)}</b> será cancelado e não poderá ser desfeito.
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Resumo do lançamento */}
+          <div style={{ background:'#FEF2F2', borderRadius:10, padding:'14px 16px', border:'1px solid #FECACA' }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Lançamento</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { label:'Pessoa',    value: conta.pessoa },
+                { label:'Descrição', value: conta.descricao },
+                { label:'Valor',     value: fmt(conta.valor) },
+                { label:'Status',    value: CONTA_STATUS[conta.status]?.label || '—' },
+              ].map(r => (
+                <div key={r.label}>
+                  <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#DC2626' }}>{r.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Aviso de impacto na venda */}
+          {conta.saleId && isPaidIncome && (
+            <div style={{ background:'#FFFBEB', borderRadius:10, padding:'12px 14px', border:'1px solid #FDE68A', display:'flex', gap:10 }}>
+              <i className="ti ti-alert-triangle" style={{ fontSize:16, color:'#D97706', flexShrink:0, marginTop:1 }} />
+              <div style={{ fontSize:12, color:'#92400E', lineHeight:1.6 }}>
+                <b>Atenção:</b> Este lançamento está vinculado à venda <b>#{String(conta.saleId).slice(-6).toUpperCase()}</b>.
+                Ao cancelar, o valor de <b>{fmt(conta.valor)}</b> deixará de contar como recebido e a venda será recalculada automaticamente.
+                A venda ficará sinalizada com pendência financeira.
+              </div>
+            </div>
+          )}
+
+          {conta.saleId && !isPaidIncome && (
+            <div style={{ background:'#EFF6FF', borderRadius:10, padding:'12px 14px', border:'1px solid #BFDBFE', display:'flex', gap:10 }}>
+              <i className="ti ti-info-circle" style={{ fontSize:16, color:'#2563EB', flexShrink:0, marginTop:1 }} />
+              <div style={{ fontSize:12, color:'#1E40AF', lineHeight:1.6 }}>
+                Este lançamento está vinculado à venda <b>#{String(conta.saleId).slice(-6).toUpperCase()}</b>.
+                Por não estar pago, o cancelamento não afeta os valores da venda.
+              </div>
+            </div>
+          )}
+
+          {/* Motivo */}
+          <div>
+            <label style={lbl}>Motivo do cancelamento <span style={{color:'#DC2626'}}>*</span></label>
+            <textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={3}
+              placeholder="Ex.: pagamento cancelado pelo paciente, lançamento duplicado..."
+              style={{ ...inp, height:'auto', padding:'8px 12px', resize:'vertical' as const }} />
+          </div>
+
+          <div style={{ fontSize:12, color:'#71717A', lineHeight:1.6 }}>
+            O lançamento será marcado como <b style={{color:'#09090B'}}>cancelado</b>. Esta ação não pode ser desfeita.
+          </div>
+
+          {error && <div style={{ fontSize:12, color:'#DC2626', padding:'8px 12px', background:'#FEF2F2', borderRadius:8, border:'1px solid #FECACA' }}>{error}</div>}
         </div>
-        <div style={{ display:'flex', gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Voltar</button>
-          <button onClick={() => mut.mutate()} disabled={mut.isPending}
+        {/* Footer */}
+        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
+          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar ação</button>
+          <button onClick={handleConfirm} disabled={mut.isPending}
             style={{ flex:2, height:40, background:mut.isPending?'#A1A1AA':'#DC2626', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-            {mut.isPending ? 'Cancelando...' : 'Sim, cancelar lançamento'}
+            <i className="ti ti-ban" style={{ fontSize:14 }} />
+            {mut.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}
           </button>
         </div>
       </div>
@@ -1062,10 +1405,11 @@ function CancelarModal({ conta, onClose }: { conta: Conta; onClose: () => void }
   );
 }
 
-// ─── Modal: Alterar vencimento ────────────────────────────────────────────────
+// ─── Painel: Alterar vencimento ───────────────────────────────────────────────
 function AlterarVencimentoModal({ conta, onClose }: { conta: Conta; onClose: () => void }) {
-  const qc     = useQueryClient();
+  const qc          = useQueryClient();
   const [date, setDate] = useState(conta.raw?.dueDate ? new Date(conta.raw.dueDate).toISOString().slice(0,10) : new Date().toISOString().slice(0,10));
+  const [obs,  setObs]  = useState('');
 
   const mut = useMutation({
     mutationFn: () => financialApi.updateTransaction(conta.id, { dueDate: date }),
@@ -1077,19 +1421,58 @@ function AlterarVencimentoModal({ conta, onClose }: { conta: Conta; onClose: () 
 
   return (
     <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:360, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease', padding:'24px' }}>
-        <div style={{ fontSize:16, fontWeight:700, color:'#09090B', marginBottom:4 }}>Alterar vencimento</div>
-        <div style={{ fontSize:12, color:'#71717A', marginBottom:16 }}>{conta.descricao}</div>
-        <div style={{ marginBottom:20 }}>
-          <label style={lbl}>Nova data de vencimento</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+        {/* Header */}
+        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:'#09090B' }}>Alterar vencimento</div>
+            <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.pessoa} — {conta.descricao}</div>
+          </div>
+          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
+            <i className="ti ti-x" style={{ fontSize:13 }} />
+          </button>
         </div>
-        <div style={{ display:'flex', gap:10 }}>
-          <button onClick={onClose} style={{ flex:1, height:38, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Resumo */}
+          <div style={{ background:'#F8FAFC', borderRadius:10, padding:'14px 16px', border:'1px solid #E4E4E7' }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:10 }}>Dados do lançamento</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { label:'Pessoa',              value: conta.pessoa },
+                { label:'Descrição',           value: conta.descricao },
+                { label:'Valor',               value: fmt(conta.valor) },
+                { label:'Status atual',        value: CONTA_STATUS[conta.status]?.label || '—' },
+                { label:'Vencimento atual',    value: conta.dueDateStr || '—' },
+              ].map(r => (
+                <div key={r.label}>
+                  <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>{r.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Novo vencimento */}
+          <div>
+            <label style={lbl}>Novo vencimento <span style={{color:'#DC2626'}}>*</span></label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+          </div>
+          {/* Observação */}
+          <div>
+            <label style={lbl}>Motivo / observação (opcional)</label>
+            <textarea value={obs} onChange={e => setObs(e.target.value)} rows={3}
+              placeholder="Ex.: negociação com fornecedor, prazo estendido..."
+              style={{ ...inp, height:'auto', padding:'8px 12px', resize:'vertical' as const }} />
+          </div>
+        </div>
+        {/* Footer */}
+        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
+          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
           <button onClick={() => mut.mutate()} disabled={mut.isPending}
-            style={{ flex:2, height:38, background:mut.isPending?'#A1A1AA':'#000000', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit' }}>
-            {mut.isPending ? 'Salvando...' : 'Salvar'}
+            style={{ flex:2, height:40, background:mut.isPending?'#A1A1AA':'#000000', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+            <i className="ti ti-calendar-check" style={{ fontSize:14 }} />
+            {mut.isPending ? 'Salvando...' : 'Salvar alteração'}
           </button>
         </div>
       </div>
@@ -1165,6 +1548,278 @@ function ContaContextMenu({ conta, onAction, onClose }: {
   );
 }
 
+// ─── Painel: Ver Detalhes da Venda/Orçamento ──────────────────────────────────
+
+function VendaDetailPanel({
+  sale, onClose, onReceber, onCancel,
+}: {
+  sale: Sale;
+  onClose: () => void;
+  onReceber: () => void;
+  onCancel: () => void;
+}) {
+  const navigate = useNavigate();
+  const raw = sale.raw;
+
+  const { data: rawTxs = [] } = useQuery<any[]>({
+    queryKey: ['transactions'],
+    queryFn: () => financialApi.transactions(),
+  });
+
+  const saleHistory = useMemo(() =>
+    (rawTxs as any[])
+      .filter(t => t.saleId === sale.id && t.status === 'PAID')
+      .map(t => ({
+        id:    t.id,
+        data:  new Date(t.paidAt || t.createdAt).toLocaleDateString('pt-BR'),
+        valor: t.amount as number,
+        forma: t.paymentMethod?.name || '—',
+      })),
+    [rawTxs, sale.id],
+  );
+
+  const items: any[] = raw?.items || [];
+  const sessions: any[] = raw?.sessions || [];
+  const saleCode = `#${String(sale.id).slice(-6).toUpperCase()}`;
+  const st = SALE_STATUS[sale.status];
+  const ty = SALE_TYPE[sale.type];
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:350 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:620, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+
+        {/* Header */}
+        <div style={{ padding:'22px 28px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+              <div style={{ fontSize:18, fontWeight:700, color:'#09090B' }}>
+                {sale.type === 'orcamento' ? 'Orçamento' : 'Venda'} {saleCode}
+              </div>
+              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:ty.bg, color:ty.color }}>{ty.label}</span>
+              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.color }}>{st.label}</span>
+            </div>
+            <div style={{ fontSize:12, color:'#71717A' }}>Emitido em {sale.date}</div>
+          </div>
+          <button onClick={onClose} style={{ width:32, height:32, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A', flexShrink:0 }}>
+            <i className="ti ti-x" style={{ fontSize:14 }} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'0 28px 28px' }}>
+
+          {/* Contato */}
+          <div style={{ marginTop:22, marginBottom:18 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Contato</div>
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              <div style={{ width:38, height:38, borderRadius:'50%', background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:600, color:'#374151', flexShrink:0 }}>
+                {sale.patient.split(' ').slice(0,2).map((n:string) => n[0]).join('')}
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:600, color:'#09090B' }}>{sale.patient}</div>
+                <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{sale.phone}</div>
+              </div>
+              {sale.patientId && (
+                <button
+                  onClick={() => { navigate(`/patients/${sale.patientId}`); onClose(); }}
+                  style={{ marginLeft:'auto', height:30, padding:'0 12px', background:'#F4F4F5', border:'1px solid #E4E4E7', borderRadius:8, fontSize:12, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit' }}
+                >
+                  <i className="ti ti-user" style={{ fontSize:12 }} /> Abrir contato
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Itens */}
+          {items.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Itens</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr style={{ background:'#F4F4F5' }}>
+                      {['Procedimento/Serviço','Qtd','Valor unit.','Desconto','Total'].map((h,i) => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:i>0?'right':'left', fontSize:10, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it: any, i: number) => {
+                      const qty      = it.quantity || 1;
+                      const price    = it.unitPrice ?? it.price ?? 0;
+                      const discount = it.discount ?? 0;
+                      const total    = qty * price - discount;
+                      return (
+                        <tr key={i} style={{ borderTop:'1px solid #F4F4F5' }}>
+                          <td style={{ padding:'10px 12px', fontSize:13, color:'#09090B' }}>{it.name || it.plan?.name || 'Procedimento'}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color:'#71717A', textAlign:'right' }}>{qty}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color:'#71717A', textAlign:'right' }}>{fmt(price)}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color:discount>0?'#DC2626':'#A1A1AA', textAlign:'right' }}>{discount > 0 ? `-${fmt(discount)}` : '—'}</td>
+                          <td style={{ padding:'10px 12px', fontSize:13, fontWeight:600, color:'#09090B', textAlign:'right' }}>{fmt(total)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Financeiro */}
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Financeiro</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
+              {[
+                { label:'Valor total',     value: fmt(sale.total),    color:'#09090B' },
+                { label:'Já recebido',     value: fmt(sale.received), color:'#16A34A' },
+                { label:'Saldo em aberto', value: fmt(sale.open),     color: sale.open > 0 ? '#DC2626' : '#A1A1AA' },
+              ].map(s => (
+                <div key={s.label} style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7' }}>
+                  <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>{s.label}</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:s.color }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Histórico de pagamentos */}
+          {saleHistory.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Histórico de recebimentos</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr style={{ background:'#F4F4F5' }}>
+                      {['Data','Valor','Forma'].map(h => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:10, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {saleHistory.map(h => (
+                      <tr key={h.id} style={{ borderTop:'1px solid #F4F4F5' }}>
+                        <td style={{ padding:'9px 12px', fontSize:12, color:'#71717A' }}>{h.data}</td>
+                        <td style={{ padding:'9px 12px', fontSize:13, fontWeight:600, color:'#16A34A' }}>{fmt(h.valor)}</td>
+                        <td style={{ padding:'9px 12px', fontSize:12, color:'#374151' }}>{h.forma}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Sessões vinculadas */}
+          {sessions.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Sessões</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', padding:'12px 16px', display:'flex', alignItems:'center', gap:10 }}>
+                <i className="ti ti-activity" style={{ fontSize:16, color:'#7C3AED' }} />
+                <span style={{ fontSize:13, color:'#374151' }}>{sessions.length} sessão(ões) gerada(s)</span>
+                <span style={{ fontSize:12, color:'#A1A1AA', marginLeft:'auto' }}>
+                  {sessions.filter((s:any) => s.sessionStatus === 'REALIZADA' || s.attended).length}/{sessions.length} realizadas
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Observações */}
+          {sale.desc && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:8 }}>Observações</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', padding:'12px 14px', fontSize:13, color:'#374151', lineHeight:1.5 }}>{sale.desc}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer — ações */}
+        <div style={{ padding:'16px 28px', borderTop:'1px solid #E4E4E7', display:'flex', gap:8, flexShrink:0, background:'#FAFAFA' }}>
+          {sale.open > 0 && sale.status !== 'cancelado' && (
+            <button
+              onClick={() => { onClose(); onReceber(); }}
+              style={{ height:38, padding:'0 16px', background:'#16A34A', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+            >
+              <i className="ti ti-cash" style={{ fontSize:14 }} /> Receber
+            </button>
+          )}
+          {sale.patientId && (
+            <button
+              onClick={() => { navigate(`/patients/${sale.patientId}?tab=Financeiro`); onClose(); }}
+              style={{ height:38, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+            >
+              <i className="ti ti-receipt" style={{ fontSize:13 }} /> Financeiro do contato
+            </button>
+          )}
+          {sale.status !== 'cancelado' && (
+            <button
+              onClick={() => { onClose(); onCancel(); }}
+              style={{ marginLeft:'auto', height:38, padding:'0 14px', background:'#FFFFFF', border:'1px solid #FECACA', borderRadius:8, fontSize:13, fontWeight:500, color:'#DC2626', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
+            >
+              <i className="ti ti-x" style={{ fontSize:13 }} /> Cancelar
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Modal: Cancelar Venda/Orçamento ──────────────────────────────────────────
+
+function CancelSaleModal({ sale, onClose, onConfirm, loading }: {
+  sale: Sale;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+  loading: boolean;
+}) {
+  const [reason, setReason] = useState('');
+  const hasPayments = sale.received > 0;
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:400, backdropFilter:'blur(2px)' }} />
+      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:401, width:'min(90vw,460px)', background:'#FFFFFF', borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.18)', padding:'28px', fontFamily:"'Inter', system-ui, sans-serif" }}>
+        <div style={{ width:44, height:44, borderRadius:'50%', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16 }}>
+          <i className="ti ti-x" style={{ fontSize:20, color:'#DC2626' }} />
+        </div>
+        <div style={{ fontSize:16, fontWeight:700, color:'#09090B', marginBottom:6 }}>
+          Cancelar {sale.type === 'orcamento' ? 'orçamento' : 'venda'}?
+        </div>
+        {hasPayments && (
+          <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px', marginBottom:14, fontSize:12, color:'#92400E', lineHeight:1.5 }}>
+            <i className="ti ti-alert-triangle" style={{ fontSize:13, marginRight:6 }} />
+            Esta venda possui pagamento registrado. O cancelamento não remove automaticamente os lançamentos financeiros. Verifique se será necessário estorno ou ajuste financeiro.
+          </div>
+        )}
+        <div style={{ fontSize:13, color:'#71717A', lineHeight:1.5, marginBottom:18 }}>
+          O registro será marcado como cancelado e não poderá ser usado para recebimentos. Esta ação não apaga os dados.
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <label style={{ display:'block', fontSize:12, fontWeight:500, color:'#71717A', marginBottom:5 }}>Motivo (opcional)</label>
+          <textarea
+            value={reason} onChange={e => setReason(e.target.value)}
+            rows={3} placeholder="Ex.: paciente desistiu, duplicidade..."
+            style={{ width:'100%', padding:'8px 12px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, color:'#09090B', fontFamily:'inherit', outline:'none', resize:'vertical', boxSizing:'border-box', background:'#FFFFFF' }}
+          />
+        </div>
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>
+            Voltar
+          </button>
+          <button
+            onClick={() => onConfirm(reason)}
+            disabled={loading}
+            style={{ flex:1, height:40, background:loading?'#A1A1AA':'#DC2626', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFF', cursor:loading?'not-allowed':'pointer', fontFamily:'inherit' }}
+          >
+            {loading ? 'Cancelando...' : 'Confirmar cancelamento'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Tab: Vendas / Orçamentos ─────────────────────────────────────────────────
 const STATUS_SELECT_ICON = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`;
 
@@ -1172,14 +1827,34 @@ function VendasTab({ sales }: { sales: Sale[] }) {
   const qc        = useQueryClient();
   const { toast } = useToast();
   const navigate  = useNavigate();
-  const ni        = () => toast('Funcionalidade ainda não implementada.', 'info');
 
-  const [statusFilter, setStatusFilter] = useState('todos');
-  const [search,       setSearch]       = useState('');
-  const [showNova,     setShowNova]     = useState(false);
-  const [receberSale,  setReceberSale]  = useState<Sale | null>(null);
+  const [statusFilter,  setStatusFilter]  = useState('todos');
+  const [search,        setSearch]        = useState('');
+  const [showNova,      setShowNova]      = useState(false);
+  const [receberSale,   setReceberSale]   = useState<Sale | null>(null);
+  const [detailSale,    setDetailSale]    = useState<Sale | null>(null);
+  const [cancelSale,    setCancelSale]    = useState<Sale | null>(null);
+  const [period,        setPeriod]        = useState<PeriodKey>('all_time');
+  const [customStart,   setCustomStart]   = useState('');
+  const [customEnd,     setCustomEnd]     = useState('');
 
-  const filtered = sales.filter(s => {
+  const cancelMut = useMutation({
+    mutationFn: (id: string) => salesApi.updateStatus(id, 'CANCELLED'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['all-sales'] });
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['financial-summary'] });
+      setCancelSale(null);
+      toast('Venda/orçamento cancelado com sucesso.', 'success');
+    },
+    onError: () => toast('Erro ao cancelar. Tente novamente.', 'error'),
+  });
+
+  const { start: pStart, end: pEnd } = useMemo(() => computePeriodRange(period, customStart, customEnd), [period, customStart, customEnd]);
+
+  const periodSales = useMemo(() => sales.filter(s => s.createdAt >= pStart && s.createdAt <= pEnd), [sales, pStart, pEnd]);
+
+  const filtered = periodSales.filter(s => {
     if (statusFilter === 'orcamentos')    return s.type === 'orcamento';
     if (statusFilter === 'vendas')        return s.type === 'venda';
     if (statusFilter === 'nao_recebidos') return s.status === 'nao_recebido';
@@ -1189,15 +1864,15 @@ function VendasTab({ sales }: { sales: Sale[] }) {
     return true;
   }).filter(s => !search || s.patient.toLowerCase().includes(search.toLowerCase()) || s.item.toLowerCase().includes(search.toLowerCase()));
 
-  const totalMes   = sales.reduce((s, v) => s + v.total,    0);
-  const recebido   = sales.reduce((s, v) => s + v.received, 0);
-  const emAberto   = sales.reduce((s, v) => s + v.open,     0);
-  const vendasHoje = sales.filter(s => s.date === new Date().toLocaleDateString('pt-BR'));
+  const totalMes   = periodSales.reduce((s, v) => s + v.total,    0);
+  const recebido   = periodSales.reduce((s, v) => s + v.received, 0);
+  const emAberto   = periodSales.reduce((s, v) => s + v.open,     0);
+  const vendasHoje = periodSales.filter(s => s.date === new Date().toLocaleDateString('pt-BR'));
 
   const kpis = [
-    { label:'Total registrado', value: fmt(totalMes), sub:`${sales.length} registros`,          icon:'ti-chart-bar',    iconBg:'#EFF6FF', iconColor:'#2563EB' },
-    { label:'Recebido',         value: fmt(recebido), sub:'Total recebido',                     icon:'ti-circle-check', iconBg:'#DCFCE7', iconColor:'#16A34A' },
-    { label:'Em aberto',        value: fmt(emAberto), sub:'A receber',                          icon:'ti-clock',        iconBg:'#FFFBEB', iconColor:'#D97706' },
+    { label:'Total registrado', value: fmt(totalMes),    sub:`${periodSales.length} registros`,              icon:'ti-chart-bar',    iconBg:'#EFF6FF', iconColor:'#2563EB' },
+    { label:'Recebido',         value: fmt(recebido),    sub:'Total recebido no período',                    icon:'ti-circle-check', iconBg:'#DCFCE7', iconColor:'#16A34A' },
+    { label:'Em aberto',        value: fmt(emAberto),    sub:'A receber no período',                         icon:'ti-clock',        iconBg:'#FFFBEB', iconColor:'#D97706' },
     { label:'Vendas hoje',      value: fmt(vendasHoje.reduce((s,v) => s + v.total, 0)), sub:`${vendasHoje.length} vendas`, icon:'ti-trending-up', iconBg:'#F5F3FF', iconColor:'#7C3AED' },
   ];
 
@@ -1228,6 +1903,8 @@ function VendasTab({ sales }: { sales: Sale[] }) {
             placeholder="Buscar contato, telefone ou venda..."
             style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
         </div>
+        <PeriodDropdown period={period} customStart={customStart} customEnd={customEnd}
+          onChange={(p, cs, ce) => { setPeriod(p); if (cs) setCustomStart(cs); if (ce) setCustomEnd(ce); }} />
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           style={{ height:36, padding:'0 32px 0 14px', border:'1px solid #E4E4E7', borderRadius:99, fontSize:12, fontWeight:500, color:'#18181B', background:'#FFFFFF', cursor:'pointer', outline:'none', fontFamily:'inherit', flexShrink:0, appearance:'none', backgroundImage:STATUS_SELECT_ICON, backgroundRepeat:'no-repeat', backgroundPosition:'right 10px center' }}>
           <option value="todos">Todos os status</option>
@@ -1267,7 +1944,12 @@ function VendasTab({ sales }: { sales: Sale[] }) {
                   onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                   <td style={{ padding:'12px 16px', fontSize:12, color:'#71717A', whiteSpace:'nowrap' }}>{s.date}</td>
                   <td style={{ padding:'12px 16px' }}>
-                    <div style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>{s.patient}</div>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>{s.patient}</div>
+                      {s.hasFinancialIssue && (
+                        <span title="Ajuste financeiro: lançamento cancelado" style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:99, background:'#FFFBEB', color:'#D97706', border:'1px solid #FDE68A', whiteSpace:'nowrap' }}>Ajuste fin.</span>
+                      )}
+                    </div>
                     <div style={{ fontSize:11, color:'#A1A1AA' }}>{s.phone}</div>
                   </td>
                   <td style={{ padding:'12px 16px' }}>
@@ -1285,17 +1967,32 @@ function VendasTab({ sales }: { sales: Sale[] }) {
                   </td>
                   <td style={{ padding:'12px 16px' }}>
                     <TableActions
-                      primaryAction={s.open > 0
+                      primaryAction={s.open > 0 && s.status !== 'cancelado'
                         ? { label: 'Receber', icon: 'ti-cash', variant: 'success', onClick: () => setReceberSale(s) }
-                        : { label: 'Ver', icon: 'ti-eye', variant: 'default', onClick: ni }
+                        : { label: 'Ver', icon: 'ti-eye', variant: 'default', onClick: () => setDetailSale(s) }
                       }
                       secondaryActions={[
-                        { label: 'Ver detalhes', icon: 'ti-eye', onClick: ni },
-                        { label: 'Editar venda', icon: 'ti-pencil', onClick: ni },
-                        { label: 'Abrir contato', icon: 'ti-user', onClick: () => s.patientId ? navigate(`/patients/${s.patientId}`) : ni() },
-                        { label: 'Ver sessões', icon: 'ti-activity', onClick: ni },
-                        { label: 'Gerar contrato', icon: 'ti-file-text', onClick: ni },
-                        { label: 'Cancelar venda', icon: 'ti-x', variant: 'danger', onClick: ni, separator: true },
+                        { label: 'Ver detalhes', icon: 'ti-eye', onClick: () => setDetailSale(s) },
+                        ...(s.status !== 'pago' && s.status !== 'cancelado'
+                          ? [{ label: 'Editar', icon: 'ti-pencil', onClick: () => { setDetailSale(s); toast('Edição disponível no painel de detalhes.', 'info'); } }]
+                          : []
+                        ),
+                        ...(s.open > 0 && s.status !== 'cancelado'
+                          ? [{ label: 'Receber', icon: 'ti-cash', onClick: () => setReceberSale(s) }]
+                          : []
+                        ),
+                        ...(s.patientId
+                          ? [{ label: 'Abrir contato', icon: 'ti-user', onClick: () => navigate(`/patients/${s.patientId}`) }]
+                          : []
+                        ),
+                        ...(s.patientId
+                          ? [{ label: 'Financeiro do contato', icon: 'ti-receipt', onClick: () => navigate(`/patients/${s.patientId}?tab=Financeiro`) }]
+                          : []
+                        ),
+                        ...(s.status !== 'cancelado'
+                          ? [{ label: `Cancelar ${s.type === 'orcamento' ? 'orçamento' : 'venda'}`, icon: 'ti-x', variant: 'danger' as const, onClick: () => setCancelSale(s), separator: true }]
+                          : []
+                        ),
                       ]}
                     />
                   </td>
@@ -1325,21 +2022,39 @@ function VendasTab({ sales }: { sales: Sale[] }) {
         />
       )}
       {receberSale && <ReceberPanel sale={receberSale} onClose={() => setReceberSale(null)} />}
+      {detailSale && (
+        <VendaDetailPanel
+          sale={detailSale}
+          onClose={() => setDetailSale(null)}
+          onReceber={() => { setDetailSale(null); setReceberSale(detailSale); }}
+          onCancel={() => { setDetailSale(null); setCancelSale(detailSale); }}
+        />
+      )}
+      {cancelSale && (
+        <CancelSaleModal
+          sale={cancelSale}
+          onClose={() => setCancelSale(null)}
+          onConfirm={() => cancelMut.mutate(cancelSale.id)}
+          loading={cancelMut.isPending}
+        />
+      )}
     </div>
   );
 }
 
 // ─── Tab: Contas — Conferência / Fluxo de caixa ───────────────────────────────
 const CONTA_FILTER_TABS = [
-  { key:'todas',       label:'Todas' },
-  { key:'entradas',    label:'Entradas' },
-  { key:'saidas',      label:'Saídas' },
+  { key:'pendencias',  label:'Pendências' },
+  { key:'todas',       label:'Todos' },
   { key:'receber',     label:'A receber' },
   { key:'pagar',       label:'A pagar' },
+  { key:'entradas',    label:'Recebidos' },
+  { key:'saidas',      label:'Pagos' },
+  { key:'vencidas',    label:'Vencidos' },
   { key:'pend_conf',   label:'Pend. conferência' },
-  { key:'conferidas',  label:'Conferidas' },
+  { key:'conferidas',  label:'Conferidos' },
   { key:'divergentes', label:'Divergentes' },
-  { key:'vencidas',    label:'Vencidas' },
+  { key:'canceladas',  label:'Cancelados' },
 ];
 
 // ─── Modal: Confirmar conferência em massa ────────────────────────────────────
@@ -1506,7 +2221,7 @@ function BulkDivergenteModal({ contas, onClose }: { contas: Conta[]; onClose: ()
 function ContasTab() {
   const qc = useQueryClient();
 
-  const [tab,              setTab]              = useState('todas');
+  const [tab,              setTab]              = useState('pendencias');
   const [search,           setSearch]           = useState('');
   const [saldoInicial,     setSaldoInicial]     = useState('0');
   const [novaPanel,        setNovaPanel]        = useState<'receita' | 'despesa' | null>(null);
@@ -1515,6 +2230,9 @@ function ContasTab() {
   const [bulkDivOpen,      setBulkDivOpen]      = useState(false);
   const [filterOpen,       setFilterOpen]       = useState(false);
   const filterWrapRef                           = useRef<HTMLDivElement>(null);
+  const [period,           setPeriod]           = useState<PeriodKey>('this_month');
+  const [customStart,      setCustomStart]      = useState('');
+  const [customEnd,        setCustomEnd]        = useState('');
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -1557,25 +2275,31 @@ function ContasTab() {
     return { map, total: running };
   }, [contas, saldoInicial]);
 
+  const { start: pStart, end: pEnd } = useMemo(() => computePeriodRange(period, customStart, customEnd), [period, customStart, customEnd]);
+
   const filtered = useMemo(() => {
     return contas
       .filter(c => {
-        if (tab === 'entradas')    return c.rawType === 'INCOME';
-        if (tab === 'saidas')      return c.rawType === 'EXPENSE';
+        // period filter (applied to all tabs except 'todas' for display flexibility, but keep it always on)
+        if (c.effectiveDate < pStart.getTime() || c.effectiveDate > pEnd.getTime()) return false;
+        if (tab === 'pendencias')  return isPendingFinancialEntry(c);
+        if (tab === 'entradas')    return c.rawType === 'INCOME'  && c.rawStatus === 'PAID';
+        if (tab === 'saidas')      return c.rawType === 'EXPENSE' && c.rawStatus === 'PAID';
         if (tab === 'receber')     return c.rawType === 'INCOME'  && c.rawStatus === 'PENDING';
         if (tab === 'pagar')       return c.rawType === 'EXPENSE' && c.rawStatus === 'PENDING';
         if (tab === 'pend_conf')   return c.rawStatus === 'PAID'  && c.statusConferencia === 'PENDENTE';
         if (tab === 'conferidas')  return c.statusConferencia === 'CONFERIDO';
         if (tab === 'divergentes') return c.statusConferencia === 'DIVERGENTE';
         if (tab === 'vencidas')    return c.status === 'vencido';
-        return true;
+        if (tab === 'canceladas')  return c.rawStatus === 'CANCELLED';
+        return true; // todas
       })
       .filter(c => !search ||
         c.pessoa.toLowerCase().includes(search.toLowerCase()) ||
         c.descricao.toLowerCase().includes(search.toLowerCase())
       )
       .sort((a, b) => b.effectiveDate - a.effectiveDate);
-  }, [contas, tab, search]);
+  }, [contas, tab, search, pStart, pEnd]);
 
   useEffect(() => { setSelected(new Set()); }, [tab, search]);
 
@@ -1612,6 +2336,7 @@ function ContasTab() {
   };
 
   const activeFilterLabel = CONTA_FILTER_TABS.find(t => t.key === tab)?.label || 'Todos';
+  const isDefaultFilter   = tab === 'pendencias';
 
   return (
     <div style={{ padding:'16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
@@ -1664,14 +2389,18 @@ function ContasTab() {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar lançamento, contato ou descrição..." style={{ border:'none', background:'transparent', fontSize:12, outline:'none', width:'100%', fontFamily:'inherit', color:'#09090B' }} />
         </div>
 
+        {/* Período */}
+        <PeriodDropdown period={period} customStart={customStart} customEnd={customEnd}
+          onChange={(p, cs, ce) => { setPeriod(p); if (cs) setCustomStart(cs); if (ce) setCustomEnd(ce); }} />
+
         {/* Filtros popover */}
         <div ref={filterWrapRef} style={{ position:'relative', flexShrink:0 }}>
           <button onClick={() => setFilterOpen(v => !v)}
-            style={{ height:36, padding:'0 14px', border:`1px solid ${tab !== 'todas' ? '#000' : '#E4E4E7'}`, borderRadius:99, fontSize:12, fontWeight:500, color:tab !== 'todas' ? '#09090B' : '#71717A', background:tab !== 'todas' ? '#F4F4F5' : '#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
-            <i className="ti ti-filter" style={{ fontSize:12 }} />
-            {tab !== 'todas' ? activeFilterLabel : 'Filtros'}
-            {tab !== 'todas' && (
-              <span onClick={e => { e.stopPropagation(); setTab('todas'); }} style={{ marginLeft:2, color:'#71717A', fontSize:11, fontWeight:700 }}>×</span>
+            style={{ height:36, padding:'0 14px', border:`1px solid ${!isDefaultFilter ? '#000' : '#E4E4E7'}`, borderRadius:99, fontSize:12, fontWeight:500, color:'#09090B', background:!isDefaultFilter ? '#F4F4F5' : '#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
+            <i className="ti ti-filter" style={{ fontSize:12, color:'#71717A' }} />
+            {activeFilterLabel}
+            {!isDefaultFilter && (
+              <span onClick={e => { e.stopPropagation(); setTab('pendencias'); }} style={{ marginLeft:2, color:'#71717A', fontSize:11, fontWeight:700 }}>×</span>
             )}
             <i className="ti ti-chevron-down" style={{ fontSize:11, marginLeft:2, transform:filterOpen?'rotate(180deg)':'none', transition:'transform .15s' }} />
           </button>

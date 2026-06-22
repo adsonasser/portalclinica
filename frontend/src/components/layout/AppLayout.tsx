@@ -538,6 +538,7 @@ export function AppLayout() {
         left: 80,
         right: 0,
         bottom: 0,
+        zIndex: 31,
         overflowY: 'auto',
         overflowX: 'hidden',
         background: 'transparent',

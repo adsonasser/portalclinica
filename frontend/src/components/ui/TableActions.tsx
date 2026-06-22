@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,16 +43,6 @@ export function TableActions({ primaryAction, secondaryActions = [] }: TableActi
   const [open, setOpen]   = useState(false);
   const [pos, setPos]     = useState({ top: 0, left: 0 });
   const dotsRef           = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (dotsRef.current && dotsRef.current.contains(e.target as Node)) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
 
   const toggleMenu = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -131,7 +121,7 @@ export function TableActions({ primaryAction, secondaryActions = [] }: TableActi
                   <div style={{ height: 1, background: '#F1F3F5', margin: '4px 0' }} />
                 )}
                 <button
-                  onClick={() => { setOpen(false); action.onClick(); }}
+                  onClick={e => { e.stopPropagation(); setOpen(false); action.onClick(); }}
                   disabled={action.disabled}
                   style={{
                     width: '100%', padding: '8px 14px',

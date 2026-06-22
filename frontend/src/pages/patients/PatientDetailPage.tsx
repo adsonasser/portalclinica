@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { patientsApi, salesApi, financialApi, sessionsApi, agendaApi, prontuarioApi, conversationsApi } from '../../services/api';
+import { patientsApi, salesApi, financialApi, sessionsApi, agendaApi, prontuarioApi, conversationsApi, contactTypesApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { NovaVendaModal } from '../../components/NovaVendaModal';
+import { calcPatientScore } from '../../utils/patientScore';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   ATIVO:         { bg: '#DCFCE7', color: '#16A34A', dot: '#22C55E', label: 'Ativo' },
@@ -79,6 +80,73 @@ function ESection({ title }: { title: string }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid #F4F4F5', marginTop: 4 }}>{title}</div>;
 }
 
+// ─── Patient Score ────────────────────────────────────────────────────────────
+
+function ScoreWidget({ patient }: { patient: any }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const { score, label, scoreColor, scoreBg, breakdown } = calcPatientScore(patient);
+
+  const items = [
+    { label: 'Valor consumido',  pts: breakdown.valorConsumido, max: 35 },
+    { label: 'Recorrência',      pts: breakdown.recorrencia,    max: 20 },
+    { label: 'Pagamento em dia', pts: breakdown.pagamentoEmDia, max: 15 },
+    { label: 'Comparecimento',   pts: breakdown.comparecimento, max: 15 },
+    { label: 'Engajamento',      pts: breakdown.engajamento,    max: 10 },
+    { label: 'Relacionamento',   pts: breakdown.relacionamento, max: 5  },
+  ];
+
+  const isPaciente = (patient.contactTypes ?? []).some((ct: any) => ct.contactType?.name?.toLowerCase() === 'paciente') || patient.contactType === 'PACIENTE';
+  const scoreTitle = isPaciente ? 'Score do paciente' : 'Score do contato';
+
+  return (
+    <div style={{ marginTop: 12, position: 'relative' }}>
+      <div
+        style={{ padding: '12px 14px', background: scoreBg, borderRadius: 10, border: `1px solid ${scoreColor}22`, cursor: 'pointer' }}
+        onClick={() => setShowTooltip(v => !v)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: scoreColor, textTransform: 'uppercase', letterSpacing: '.06em' }}>{scoreTitle}</div>
+          <i className="ti ti-info-circle" style={{ fontSize: 13, color: scoreColor, opacity: 0.7 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 6 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{score}</div>
+          <div style={{ fontSize: 12, color: scoreColor, opacity: 0.7, marginBottom: 2 }}>/100</div>
+        </div>
+        <div style={{ height: 5, background: `${scoreColor}22`, borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${score}%`, background: scoreColor, borderRadius: 99, transition: 'width .4s ease' }} />
+        </div>
+        <div style={{ fontSize: 11, color: scoreColor, marginTop: 4, fontWeight: 600 }}>{label}</div>
+      </div>
+
+      {showTooltip && (
+        <>
+          <div onClick={() => setShowTooltip(false)} style={{ position: 'fixed', inset: 0, zIndex: 50 }} />
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 51, marginTop: 4, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)', padding: '10px 0' }}>
+            <div style={{ padding: '2px 12px 8px', fontSize: 10, fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.06em', borderBottom: '1px solid #F4F4F5', marginBottom: 4 }}>Composição do score</div>
+            {items.map((b, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', gap: 8 }}>
+                <span style={{ fontSize: 11, color: '#374151' }}>{b.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: b.pts > 0 ? '#16A34A' : '#A1A1AA', flexShrink: 0 }}>{b.pts}/{b.max}</span>
+              </div>
+            ))}
+            {breakdown.penalizacoes < 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', gap: 8, borderTop: '1px solid #F4F4F5', marginTop: 4 }}>
+                <span style={{ fontSize: 11, color: '#DC2626' }}>Penalizações</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', flexShrink: 0 }}>{breakdown.penalizacoes}</span>
+              </div>
+            )}
+            <div style={{ padding: '6px 12px 2px', marginTop: 4, borderTop: '1px solid #F4F4F5' }}>
+              <div style={{ fontSize: 10, color: '#A1A1AA', lineHeight: 1.4 }}>
+                Calculado com base em consumo, recorrência, pagamentos, comparecimento e engajamento.
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Financeiro Tab ───────────────────────────────────────────────────────────
 
 function FinanceiroTab({ patient }: { patient: any }) {
@@ -93,6 +161,7 @@ function FinanceiroTab({ patient }: { patient: any }) {
   const [receiveMethodId, setReceiveMethodId] = useState('');
   const [receiveDate, setReceiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [receiveGenerateSessions, setReceiveGenerateSessions] = useState(true);
+  const [openMenuSaleId, setOpenMenuSaleId] = useState<string | null>(null);
 
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ['patient-sales', patient.id],
@@ -132,19 +201,19 @@ function FinanceiroTab({ patient }: { patient: any }) {
     CANCELLED: { label: 'Cancelado',    bg: '#FEF2F2', color: '#DC2626' },
   };
   const TYPE_COLORS: Record<string, { label: string; bg: string; color: string }> = {
-    ORCAMENTO: { label: 'Orçamento', bg: '#EFF6FF', color: '#2563EB' },
-    VENDA:     { label: 'Venda',     bg: '#F0FDF4', color: '#16A34A' },
+    ORCAMENTO: { label: 'Orç.', bg: '#EFF6FF', color: '#2563EB' },
+    VENDA:     { label: 'Venda', bg: '#F0FDF4', color: '#16A34A' },
   };
 
   const getSessionsLabel = (sale: any) => {
     const plan = sale.items?.[0]?.plan;
-    if (!plan || plan.sessionsTotal === 0) return { label: 'Não gera', bg: '#F4F4F5', color: '#A1A1AA' };
+    if (!plan || plan.sessionsTotal === 0) return null;
     const ss = sale.sessions || [];
-    if (ss.length === 0) return { label: 'Não geradas', bg: '#FEF2F2', color: '#DC2626' };
+    if (ss.length === 0) return { label: 'Sessões não geradas', bg: '#FEF2F2', color: '#DC2626' };
     const done = ss.filter((s: any) => s.sessionStatus === 'REALIZADO' || s.attended).length;
-    if (done === ss.length) return { label: 'Concluído', bg: '#DCFCE7', color: '#16A34A' };
+    if (done === ss.length) return { label: `${done}/${ss.length} concluídas`, bg: '#DCFCE7', color: '#16A34A' };
     if (done > 0) return { label: `${done}/${ss.length} realizadas`, bg: '#FFFBEB', color: '#D97706' };
-    return { label: `${ss.length} geradas`, bg: '#F0FDFA', color: '#0D9488' };
+    return { label: `${ss.length} sessões geradas`, bg: '#F0FDFA', color: '#0D9488' };
   };
 
   const filteredSales = (sales as any[]).filter(s => {
@@ -173,6 +242,13 @@ function FinanceiroTab({ patient }: { patient: any }) {
 
   const FILTERS = ['Todos', 'Orçamentos', 'Vendas', 'Em aberto', 'Parcial', 'Pago', 'Cancelado'];
 
+  // KPI calculations from loaded sales
+  const allSales = sales as any[];
+  const totalVendido  = allSales.reduce((s, v) => s + (v.saleType === 'VENDA' ? (v.total ?? 0) : 0), 0);
+  const totalRecebido = allSales.reduce((s, v) => s + (v.paidAmount ?? 0), 0);
+  const totalAberto   = allSales.reduce((s, v) => v.status !== 'CANCELLED' ? s + Math.max(0, (v.total ?? 0) - (v.paidAmount ?? 0)) : s, 0);
+  const pendencias    = allSales.filter(v => v.status === 'PENDING' || v.status === 'PARTIAL').length;
+
   return (
     <div>
       {/* Header */}
@@ -183,12 +259,33 @@ function FinanceiroTab({ patient }: { patient: any }) {
         </div>
         <button onClick={() => setShowNovaVenda(true)}
           style={{ height: 34, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-          <i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo atendimento / orçamento
+          <i className="ti ti-plus" style={{ fontSize: 13 }} /> Nova venda
         </button>
       </div>
 
+      {/* KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        {[
+          { icon: 'ti-cash', label: 'Total vendido',  value: fmt(totalVendido),  sub: `${allSales.filter(s => s.saleType === 'VENDA').length} vendas`, iconBg: '#F0FDF4', iconColor: '#16A34A' },
+          { icon: 'ti-check', label: 'Recebido',      value: fmt(totalRecebido), sub: 'Valor já pago',           iconBg: '#EFF6FF', iconColor: '#2563EB' },
+          { icon: 'ti-clock', label: 'Em aberto',     value: fmt(totalAberto),   sub: 'A receber ainda',         iconBg: totalAberto > 0 ? '#FFFBEB' : '#F4F4F5', iconColor: totalAberto > 0 ? '#D97706' : '#A1A1AA' },
+          { icon: 'ti-alert-circle', label: 'Pendências', value: String(pendencias), sub: pendencias > 0 ? 'vendas aguardando' : 'Tudo em dia', iconBg: pendencias > 0 ? '#FEF2F2' : '#F4F4F5', iconColor: pendencias > 0 ? '#DC2626' : '#A1A1AA' },
+        ].map((k, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: '1px solid #E4E4E7', background: '#FAFAFA' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 9, background: k.iconBg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className={`ti ${k.icon}`} style={{ fontSize: 16, color: k.iconColor }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, color: '#71717A', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em' }}>{k.label}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B', lineHeight: 1.2 }}>{k.value}</div>
+              <div style={{ fontSize: 10, color: '#A1A1AA', marginTop: 1 }}>{k.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Filtros */}
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
         {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
             style={{ height: 28, padding: '0 12px', borderRadius: 99, fontSize: 12, fontWeight: filter === f ? 600 : 400, background: filter === f ? '#000' : '#FFFFFF', color: filter === f ? '#FFF' : '#71717A', border: filter === f ? 'none' : '1px solid #E4E4E7', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -204,30 +301,39 @@ function FinanceiroTab({ patient }: { patient: any }) {
           <div style={{ fontSize: 12, color: '#71717A' }}>Carregando...</div>
         </div>
       ) : filteredSales.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '56px 0' }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-            <i className="ti ti-cash-off" style={{ fontSize: 24, color: '#A1A1AA' }} />
+        <div style={{ textAlign: 'center', padding: '48px 0' }}>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            <i className="ti ti-cash-off" style={{ fontSize: 22, color: '#A1A1AA' }} />
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#09090B', marginBottom: 4 }}>
-            {filter === 'Todos' ? 'Nenhuma venda ou orçamento' : `Nenhum item — filtro "${filter}"`}
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', marginBottom: 4 }}>
+            {filter === 'Todos' ? 'Nenhuma venda ou orçamento' : `Nenhum item — "${filter}"`}
           </div>
-          <div style={{ fontSize: 13, color: '#71717A', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: '#71717A', marginBottom: 14 }}>
             {filter === 'Todos' ? 'Clique em "Novo atendimento / orçamento" para começar.' : 'Tente outro filtro.'}
           </div>
           {filter === 'Todos' && (
             <button onClick={() => setShowNovaVenda(true)}
-              style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo atendimento / orçamento
+              style={{ height: 34, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <i className="ti ti-plus" style={{ fontSize: 13 }} /> Nova venda
             </button>
           )}
         </div>
       ) : (
-        <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7', overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+        <div style={{ background: '#FFFFFF', borderRadius: 10, border: '1px solid #E4E4E7', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 76 }} />
+              <col />
+              <col style={{ width: 92 }} />
+              <col style={{ width: 92 }} />
+              <col style={{ width: 92 }} />
+              <col style={{ width: 116 }} />
+              <col style={{ width: 96 }} />
+            </colgroup>
             <thead>
               <tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>
-                {['DATA', 'PROCEDIMENTO', 'VALOR', 'RECEBIDO', 'EM ABERTO', 'TIPO', 'STATUS', 'SESSÕES', 'AÇÕES'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap' }}>{h}</th>
+                {['DATA', 'PROCEDIMENTO', 'TOTAL', 'RECEBIDO', 'SALDO', 'STATUS', 'AÇÕES'].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em', whiteSpace: 'nowrap', overflow: 'hidden' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -239,50 +345,68 @@ function FinanceiroTab({ patient }: { patient: any }) {
                 const paidAmt = sale.paidAmount ?? 0;
                 const openAmt = Math.max(0, sale.total - paidAmt);
                 const hasPendingSessions = (sale.items?.[0]?.plan?.sessionsTotal ?? 0) > 0 && (sale.sessions?.length ?? 0) === 0 && sale.saleType === 'VENDA';
+                const menuOpen = openMenuSaleId === sale.id;
                 return (
                   <tr key={sale.id} style={{ borderBottom: '1px solid #F4F4F5' }}
                     onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F9F9F9'}
                     onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}>
-                    <td style={{ padding: '12px 14px', fontSize: 12, color: '#71717A', whiteSpace: 'nowrap' }}>
-                      {format(new Date(sale.createdAt), 'dd/MM/yyyy', { locale: ptBR })}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#71717A', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      {format(new Date(sale.createdAt), 'dd/MM/yy', { locale: ptBR })}
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {sale.items?.[0]?.name || 'Procedimento'}
+                    <td style={{ padding: '10px 12px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: tp.bg, color: tp.color, flexShrink: 0 }}>{tp.label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: '#09090B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                          {sale.items?.[0]?.name || 'Procedimento'}
+                        </span>
                       </div>
-                      {sale.notes && <div style={{ fontSize: 11, color: '#A1A1AA', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sale.notes}</div>}
+                      {sesLabel && (
+                        <div style={{ marginTop: 3 }}>
+                          <span style={{ fontSize: 10, fontWeight: 500, padding: '1px 6px', borderRadius: 99, background: sesLabel.bg, color: sesLabel.color }}>{sesLabel.label}</span>
+                        </div>
+                      )}
                     </td>
-                    <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: '#09090B', whiteSpace: 'nowrap' }}>{fmt(sale.total)}</td>
-                    <td style={{ padding: '12px 14px', fontSize: 13, color: paidAmt > 0 ? '#16A34A' : '#A1A1AA', whiteSpace: 'nowrap' }}>{fmt(paidAmt)}</td>
-                    <td style={{ padding: '12px 14px', fontSize: 13, color: openAmt > 0 ? '#D97706' : '#A1A1AA', whiteSpace: 'nowrap' }}>{fmt(openAmt)}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: tp.bg, color: tp.color }}>{tp.label}</span>
+                    <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 600, color: '#09090B', whiteSpace: 'nowrap', overflow: 'hidden' }}>{fmt(sale.total)}</td>
+                    <td style={{ padding: '10px 12px', fontSize: 13, color: paidAmt > 0 ? '#16A34A' : '#A1A1AA', whiteSpace: 'nowrap', overflow: 'hidden' }}>{fmt(paidAmt)}</td>
+                    <td style={{ padding: '10px 12px', fontSize: 13, color: openAmt > 0 ? '#D97706' : '#A1A1AA', whiteSpace: 'nowrap', overflow: 'hidden' }}>{fmt(openAmt)}</td>
+                    <td style={{ padding: '10px 12px', overflow: 'hidden' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: st.bg, color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99, background: st.bg, color: st.color }}>{st.label}</span>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 8px', borderRadius: 99, background: sesLabel.bg, color: sesLabel.color }}>{sesLabel.label}</span>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                    <td style={{ padding: '10px 12px', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                         {sale.status !== 'PAID' && sale.status !== 'CANCELLED' && (
                           <button onClick={() => { setReceivingSale(sale); setReceiveAmount(String(openAmt)); setReceiveDrawerOpen(true); }}
-                            style={{ height: 26, padding: '0 10px', background: '#000', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                            style={{ height: 26, padding: '0 9px', background: '#000', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, color: '#FFF', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
                             Receber
                           </button>
                         )}
-                        {hasPendingSessions && (
-                          <button onClick={() => genMut.mutate(sale.id)} disabled={genMut.isPending}
-                            style={{ height: 26, padding: '0 10px', background: '#F0FDFA', border: '1px solid #CCFBF1', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#0D9488', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                            Gerar sessões
-                          </button>
-                        )}
-                        {sale.status !== 'CANCELLED' && (
-                          <button onClick={() => { if (window.confirm('Cancelar esta venda? Esta ação não pode ser desfeita.')) cancelMut.mutate(sale.id); }}
-                            style={{ height: 26, padding: '0 10px', background: 'transparent', border: '1px solid #E4E4E7', borderRadius: 6, fontSize: 11, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 500 }}>
-                            <i className="ti ti-x" style={{ fontSize: 11 }} /> Cancelar
-                          </button>
+                        {(hasPendingSessions || sale.status !== 'CANCELLED') && (
+                          <div style={{ position: 'relative', flexShrink: 0 }}>
+                            <button
+                              onClick={() => setOpenMenuSaleId(menuOpen ? null : sale.id)}
+                              style={{ height: 26, width: 26, background: 'transparent', border: '1px solid #E4E4E7', borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                              <i className="ti ti-dots-vertical" style={{ fontSize: 12, color: '#71717A' }} />
+                            </button>
+                            {menuOpen && (
+                              <>
+                                <div onClick={() => setOpenMenuSaleId(null)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+                                <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 201, marginTop: 4, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.12)', minWidth: 148, overflow: 'hidden' }}>
+                                  {hasPendingSessions && (
+                                    <button onClick={() => { genMut.mutate(sale.id); setOpenMenuSaleId(null); }} disabled={genMut.isPending}
+                                      style={{ width: '100%', height: 34, padding: '0 12px', background: 'transparent', border: 'none', textAlign: 'left', fontSize: 12, color: '#0D9488', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}>
+                                      <i className="ti ti-activity" style={{ fontSize: 13 }} /> Gerar sessões
+                                    </button>
+                                  )}
+                                  {sale.status !== 'CANCELLED' && (
+                                    <button onClick={() => { if (window.confirm('Cancelar esta venda?')) { cancelMut.mutate(sale.id); setOpenMenuSaleId(null); } }}
+                                      style={{ width: '100%', height: 34, padding: '0 12px', background: 'transparent', border: 'none', textAlign: 'left', fontSize: 12, color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'inherit' }}>
+                                      <i className="ti ti-x" style={{ fontSize: 13 }} /> Cancelar venda
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -917,16 +1041,17 @@ function SessoesTab({ patient }: { patient: any }) {
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('Resumo');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'Resumo');
   const [openingWa, setOpeningWa] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<any>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState('Dados pessoais');
   const [editForm, setEditForm] = useState({
     // Aba 1 — Dados pessoais
-    name: '', contactType: '', status: '', cpf: '', rg: '',
+    name: '', contactTypeIds: [] as string[], status: '', cpf: '', rg: '',
     birthDate: '', gender: '', profession: '', responsavel: '',
     // Aba 2 — Contato
     phone: '', phoneSecondary: '', email: '', instagram: '',
@@ -955,7 +1080,7 @@ export function PatientDetailPage() {
       // Dados pessoais
       name:               f.name                  || undefined,
       status:             f.status                || undefined,
-      contactType:        f.contactType           || undefined,
+      contactTypeIds:     f.contactTypeIds,
       cpf:                f.cpf                   || null,
       rg:                 f.rg                    || null,
       gender:             f.gender                || null,
@@ -1039,7 +1164,7 @@ export function PatientDetailPage() {
     setEditForm({
       // Aba 1
       name:               p.name              || '',
-      contactType:        p.contactType       || '',
+      contactTypeIds:     (p.contactTypes ?? []).map((ct: any) => ct.contactTypeId),
       status:             p.status            || 'NOVO',
       cpf:                p.cpf               || '',
       rg:                 p.rg                || '',
@@ -1094,11 +1219,34 @@ export function PatientDetailPage() {
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setEditForm(f => ({ ...f, [field]: e.target.value }));
 
+  const toggleEditContactType = (id: string) =>
+    setEditForm(f => ({
+      ...f,
+      contactTypeIds: f.contactTypeIds.includes(id)
+        ? f.contactTypeIds.filter(x => x !== id)
+        : [...f.contactTypeIds, id],
+    }));
+
+  const { data: contactTypes = [] } = useQuery({
+    queryKey: ['contact-types'],
+    queryFn: () => contactTypesApi.list(),
+  });
+
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', id],
     queryFn: () => patientsApi.get(id!),
     enabled: !!id,
   });
+
+  // Open edit drawer when navigated with ?edit=true
+  const autoEditFired = useRef(false);
+  useEffect(() => {
+    if (!patient || autoEditFired.current) return;
+    if (searchParams.get('edit') === 'true') {
+      autoEditFired.current = true;
+      openEdit(patient);
+    }
+  }, [patient]);
 
   if (isLoading) {
     return (
@@ -1221,7 +1369,7 @@ export function PatientDetailPage() {
       <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
         <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', padding: '20px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
 
-          {/* Avatar + nome + badges */}
+          {/* Avatar + nome + badges + score */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingBottom: 16, borderBottom: '1px solid #F4F4F5' }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F4F4F5', border: '2px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: '#71717A', overflow: 'hidden', flexShrink: 0 }}>
               {patient.avatarUrl
@@ -1238,6 +1386,8 @@ export function PatientDetailPage() {
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: badge.dot, flexShrink: 0 }} />{badge.label}
               </span>
             </div>
+            {/* Score logo abaixo do nome */}
+            <ScoreWidget patient={patient} />
           </div>
 
           {/* Contato */}
@@ -1336,11 +1486,10 @@ export function PatientDetailPage() {
             <button onClick={() => openEdit(patient)} style={{ height: 36, padding: '0 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#18181B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
               <i className="ti ti-pencil" style={{ fontSize: 14 }} /> Editar
             </button>
-            <button style={{ height: 36, padding: '0 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#18181B', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
+            <button
+              onClick={() => navigate(`/agenda?newAppointment=true&patientId=${patient.id}&patientName=${encodeURIComponent(patient.name)}&patientPhone=${encodeURIComponent(patient.phone || '')}`)}
+              style={{ height: 36, padding: '0 14px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
               <i className="ti ti-calendar-plus" style={{ fontSize: 14 }} /> Novo agendamento
-            </button>
-            <button style={{ height: 36, padding: '0 14px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
-              <i className="ti ti-receipt" style={{ fontSize: 14 }} /> Novo atendimento
             </button>
           </div>
         </div>
@@ -1395,7 +1544,7 @@ export function PatientDetailPage() {
           </div>
 
           {/* Conteúdo das abas */}
-          <div style={{ padding: '20px' }}>
+          <div style={{ padding: '20px', overflowX: 'hidden', minWidth: 0 }}>
 
             {activeTab === 'Resumo' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1799,16 +1948,40 @@ export function PatientDetailPage() {
                   <div><ELabel>Nome completo <span style={{ color: '#DC2626' }}>*</span></ELabel><input value={editForm.name} onChange={set('name')} style={inp} placeholder="Nome completo do contato" /></div>
                 </EGrid>
                 <EGrid>
-                  <div>
-                    <ELabel>Tipo de contato</ELabel>
-                    <select value={editForm.contactType} onChange={set('contactType')} style={sel}>
-                      <option value="">Selecionar</option>
-                      <option value="PACIENTE">Paciente</option>
-                      <option value="RESPONSAVEL">Responsável</option>
-                      <option value="ACOMPANHANTE">Acompanhante</option>
-                      <option value="LEAD">Lead</option>
-                      <option value="OUTROS">Outros</option>
-                    </select>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <ELabel>Tipo de contato <span style={{ color: '#DC2626' }}>*</span></ELabel>
+                    {(contactTypes as any[]).length === 0 ? (
+                      <div style={{ padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, fontSize: 12, color: '#92400E' }}>
+                        Nenhum tipo cadastrado. Configure em <b>Configurações → Contatos → Tipos de Contato</b>.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {(contactTypes as any[]).map((ct: any) => {
+                          const sel = editForm.contactTypeIds.includes(ct.id);
+                          const color = ct.color || '#71717A';
+                          return (
+                            <button
+                              key={ct.id}
+                              type="button"
+                              onClick={() => toggleEditContactType(ct.id)}
+                              style={{
+                                height: 32, padding: '0 14px', borderRadius: 99,
+                                border: sel ? `2px solid ${color}` : '1px solid #E4E4E7',
+                                background: sel ? `${color}18` : '#FFFFFF',
+                                color: sel ? color : '#71717A',
+                                fontSize: 12, fontWeight: sel ? 600 : 400,
+                                cursor: 'pointer', fontFamily: 'inherit',
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                transition: 'all .15s',
+                              }}
+                            >
+                              {sel && <i className="ti ti-check" style={{ fontSize: 12 }} />}
+                              {ct.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <ELabel>Status</ELabel>

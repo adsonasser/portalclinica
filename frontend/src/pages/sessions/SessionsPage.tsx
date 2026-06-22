@@ -51,6 +51,7 @@ interface Pacote {
   patientId: string;
   procedimento: string;
   contratadas: number;
+  agendadas: number;
   realizadas: number;
   restantes: number;
   validade: string;
@@ -709,11 +710,12 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
                 {pkgSt.label}
               </span>
             </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:14 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:14 }}>
               {[
                 { label:'Contratadas', value:pacote.contratadas, color:'#374151' },
+                { label:'Agendadas',   value:pacote.agendadas,   color:'#2563EB' },
                 { label:'Realizadas',  value:pacote.realizadas,  color:'#16A34A' },
-                { label:'Restantes',   value:pacote.restantes,   color:'#2563EB' },
+                { label:'Restantes',   value:pacote.restantes,   color:'#7C3AED' },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{ textAlign:'center', padding:'12px 8px', borderRadius:12, background:'rgba(248,249,250,0.7)', border:'1px solid #F1F3F5' }}>
                   <div style={{ fontSize:22, fontWeight:700, color, lineHeight:1.1 }}>{value}</div>
@@ -752,7 +754,13 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
                       <td style={{ padding:'9px 14px' }}>
                         <span style={{ fontSize:10, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.color, border:`1px solid ${st.color}20` }}>{st.label}</span>
                       </td>
-                      <td style={{ padding:'9px 14px', fontSize:11, color:'#747686', whiteSpace:'nowrap' }}>{s.data}</td>
+                      <td style={{ padding:'9px 14px', fontSize:11, color: s.status === 'a_agendar' ? '#A1A1AA' : '#374151', whiteSpace:'nowrap', fontStyle: s.status === 'a_agendar' ? 'italic' : 'normal' }}>
+                        {s.status === 'a_agendar'
+                          ? 'A agendar'
+                          : s.data && s.data !== '—'
+                            ? `${['agendada','confirmada','em_atendimento','reagendada'].includes(s.status) ? 'Agendada para ' : ''}${s.data}`
+                            : '—'}
+                      </td>
                       <td style={{ padding:'9px 14px', fontSize:11, color:'#747686' }}>{s.profissional}</td>
                       <td style={{ padding:'9px 14px' }}>
                         {s.status === 'a_agendar' ? (
@@ -787,12 +795,6 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
               <i className="ti ti-calendar-plus" style={{ fontSize:13 }} /> Agendar próxima
             </button>
           )}
-          <button style={{ height:36, padding:'0 14px', border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:99, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 }}>
-            <i className="ti ti-list-check" style={{ fontSize:13 }} /> Agendar todas
-          </button>
-          <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
-            <button style={{ height:36, padding:'0 14px', border:'1px solid #FECACA', background:'#FEF2F2', borderRadius:99, fontSize:13, fontWeight:500, color:'#DC2626', cursor:'pointer', fontFamily:'inherit' }}>Encerrar</button>
-          </div>
         </div>
       </div>
     </>
@@ -809,14 +811,14 @@ function PackagesTable({ pacotes, onView }: { pacotes: Pacote[]; onView: (p: Pac
     </div>
   );
 
-  const COLS = ['Contato', 'Pacote / Procedimento', 'Contratação', 'Contratadas', 'Realizadas', 'Restantes', 'Status', 'Ações'];
+  const COLS = ['Contato', 'Pacote / Procedimento', 'Contratação', 'Contratadas', 'Agendadas', 'Realizadas', 'Restantes', 'Status', 'Ações'];
 
   return (
     <table style={{ width:'100%', borderCollapse:'collapse' }}>
       <thead>
         <tr style={{ background:'rgba(248,249,250,0.7)', borderBottom:'1px solid #F1F3F5' }}>
           {COLS.map((h, i) => (
-            <th key={h} style={{ padding:'10px 16px', textAlign: (i >= 3 && i <= 5) ? 'center' : i === 7 ? 'right' : 'left', fontSize:11, fontWeight:600, color:'#747686', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
+            <th key={h} style={{ padding:'10px 12px', textAlign: (i >= 3 && i <= 6) ? 'center' : i === 8 ? 'right' : 'left', fontSize:11, fontWeight:600, color:'#747686', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{h}</th>
           ))}
         </tr>
       </thead>
@@ -828,20 +830,23 @@ function PackagesTable({ pacotes, onView }: { pacotes: Pacote[]; onView: (p: Pac
             <tr key={p.id} style={{ borderBottom:'1px solid #F1F3F5' }}
               onMouseEnter={e => (e.currentTarget.style.background = '#F8F9FA')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <td style={{ padding:'12px 16px' }}>
+              <td style={{ padding:'12px 12px' }}>
                 <div style={{ fontSize:13, fontWeight:500, color:'#191C1D' }}>{p.paciente}</div>
                 {p.phone && <div style={{ fontSize:11, color:'#747686', marginTop:2 }}>{p.phone}</div>}
               </td>
-              <td style={{ padding:'12px 16px', fontSize:13, color:'#444654', maxWidth:200 }}>
+              <td style={{ padding:'12px 12px', fontSize:13, color:'#444654', maxWidth:180 }}>
                 <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.procedimento}</div>
               </td>
-              <td style={{ padding:'12px 16px', fontSize:12, color:'#747686', whiteSpace:'nowrap' }}>{p.dataContratacao}</td>
-              <td style={{ padding:'12px 16px', textAlign:'center', fontSize:13, fontWeight:600, color:'#374151' }}>{p.contratadas}</td>
-              <td style={{ padding:'12px 16px', textAlign:'center' }}>
+              <td style={{ padding:'12px 12px', fontSize:12, color:'#747686', whiteSpace:'nowrap' }}>{p.dataContratacao}</td>
+              <td style={{ padding:'12px 12px', textAlign:'center', fontSize:13, fontWeight:600, color:'#374151' }}>{p.contratadas}</td>
+              <td style={{ padding:'12px 12px', textAlign:'center' }}>
+                <span style={{ fontSize:13, fontWeight:700, color: p.agendadas > 0 ? '#2563EB' : '#A1A1AA' }}>{p.agendadas}</span>
+              </td>
+              <td style={{ padding:'12px 12px', textAlign:'center' }}>
                 <span style={{ fontSize:13, fontWeight:700, color:'#16A34A' }}>{p.realizadas}</span>
               </td>
-              <td style={{ padding:'12px 16px', textAlign:'center' }}>
-                <span style={{ fontSize:13, fontWeight:700, color:'#2563EB' }}>{p.restantes}</span>
+              <td style={{ padding:'12px 12px', textAlign:'center' }}>
+                <span style={{ fontSize:13, fontWeight:700, color:'#7C3AED' }}>{p.restantes}</span>
               </td>
               <td style={{ padding:'12px 16px' }}>
                 <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
@@ -914,10 +919,11 @@ export function SessionsPage() {
       }
     }
     return Array.from(map.entries())
-      .filter(([, list]) => list.length > 1)
+      .filter(([, list]) => list.length >= 1)
       .map(([saleId, list]) => {
         const realizadas = list.filter(s => s.status === 'realizada').length;
         const canceladas = list.filter(s => s.status === 'cancelada').length;
+        const agendadas  = list.filter(s => s.status === 'agendada' || s.status === 'confirmada' || s.status === 'em_atendimento' || s.status === 'reagendada').length;
         const todasRealizadas = realizadas === list.length;
         const algumVencida = list.some(s => s.status === 'vencida');
         let pkgStatus: PackageStatus = 'ativo';
@@ -934,6 +940,7 @@ export function SessionsPage() {
           patientId:       list[0].patientId,
           procedimento:    list[0].procedimento,
           contratadas:     list.length,
+          agendadas,
           realizadas,
           restantes:       list.length - realizadas - canceladas,
           validade:        '—',
@@ -942,13 +949,16 @@ export function SessionsPage() {
           dataContratacao: saleCreatedAt
             ? new Date(saleCreatedAt).toLocaleDateString('pt-BR')
             : '—',
-          sessoes: list.map(s => ({
-            id:           s.id,
-            nome:         s.sessao,
-            status:       s.status,
-            data:         s.data,
-            profissional: s.profissional,
-          })),
+          sessoes: list
+            .slice()
+            .sort((a, b) => (a.sessionNumber ?? 0) - (b.sessionNumber ?? 0))
+            .map(s => ({
+              id:           s.id,
+              nome:         s.sessao,
+              status:       s.status,
+              data:         s.data,
+              profissional: s.profissional,
+            })),
         } satisfies Pacote;
       });
   }, [sessions]);
@@ -956,7 +966,7 @@ export function SessionsPage() {
   const detailPkg = useMemo(() => pacotes.find(p => p.id === detailPkgId) ?? null, [pacotes, detailPkgId]);
 
   const kpiAtivos     = pacotes.filter(p => p.status === 'ativo' || p.status === 'atencao').length;
-  const kpiAgendar    = sessions.filter(s => s.status === 'a_agendar').length;
+  const kpiAgendar    = pacotes.reduce((sum, p) => sum + Math.max(0, p.restantes - p.agendadas), 0);
   const kpiVencidas   = sessions.filter(s => s.status === 'vencida').length;
   const kpiConcluidos = pacotes.filter(p => p.status === 'concluido').length;
 
