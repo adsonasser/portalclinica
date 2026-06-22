@@ -19,18 +19,18 @@ export class ContractTemplatesService {
   }
 
   async create(clinicId: string, data: any) {
-    const { name, description, content, variables, isActive } = data;
+    const { name, type, description, content, variables, isActive } = data;
     return this.prisma.contractTemplate.create({
-      data: { clinicId, name, description, content, variables: variables ?? [], isActive: isActive ?? true },
+      data: { clinicId, name, type: type || 'Prestação de serviço', description, content, variables: variables ?? [], isActive: isActive ?? true },
     });
   }
 
   async update(clinicId: string, id: string, data: any) {
     await this.findOne(clinicId, id);
-    const { name, description, content, variables, isActive } = data;
+    const { name, type, description, content, variables, isActive } = data;
     return this.prisma.contractTemplate.update({
       where: { id },
-      data: { name, description, content, variables, isActive },
+      data: { name, type, description, content, variables, isActive },
     });
   }
 

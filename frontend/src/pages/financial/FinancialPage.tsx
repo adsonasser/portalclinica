@@ -5,6 +5,7 @@ import { salesApi, financialApi, patientsApi } from '../../services/api';
 import { NovaVendaModal } from '../../components/NovaVendaModal';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
+import { Portal } from '../../components/ui/Portal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SaleStatus       = 'pago' | 'parcial' | 'nao_recebido' | 'vencido' | 'cancelado';
@@ -400,7 +401,7 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
   };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:350 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
 
@@ -583,7 +584,7 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -693,7 +694,7 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
   };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:350, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:540, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)' }}>
 
@@ -818,7 +819,7 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -855,7 +856,7 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
   });
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:400 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:401, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
@@ -921,7 +922,7 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -955,7 +956,7 @@ function DetalhePanel({
   );
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.2)', zIndex:300 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:301, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
 
@@ -1077,7 +1078,7 @@ function DetalhePanel({
           <button onClick={onClose} style={{ height:38, padding:'0 16px', background:'#F4F4F5', border:'none', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Fechar</button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1104,7 +1105,7 @@ function ConfirmarConferenciaModal({ conta, onClose }: { conta: Conta; onClose: 
   });
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
@@ -1176,7 +1177,7 @@ function ConfirmarConferenciaModal({ conta, onClose }: { conta: Conta; onClose: 
           </div>
         )}
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1223,7 +1224,7 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
   };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
@@ -1293,7 +1294,7 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1322,7 +1323,7 @@ function CancelarModal({ conta, onClose }: { conta: Conta; onClose: () => void }
   };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
@@ -1401,7 +1402,7 @@ function CancelarModal({ conta, onClose }: { conta: Conta; onClose: () => void }
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1420,7 +1421,7 @@ function AlterarVencimentoModal({ conta, onClose }: { conta: Conta; onClose: () 
   });
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
@@ -1476,7 +1477,7 @@ function AlterarVencimentoModal({ conta, onClose }: { conta: Conta; onClose: () 
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1585,7 +1586,7 @@ function VendaDetailPanel({
   const ty = SALE_TYPE[sale.type];
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:350 }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:620, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
 
@@ -1761,7 +1762,7 @@ function VendaDetailPanel({
           )}
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -1777,7 +1778,7 @@ function CancelSaleModal({ sale, onClose, onConfirm, loading }: {
   const hasPayments = sale.received > 0;
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:400, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:401, width:'min(90vw,460px)', background:'#FFFFFF', borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.18)', padding:'28px', fontFamily:"'Inter', system-ui, sans-serif" }}>
         <div style={{ width:44, height:44, borderRadius:'50%', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16 }}>
@@ -1816,7 +1817,7 @@ function CancelSaleModal({ sale, onClose, onConfirm, loading }: {
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -2083,7 +2084,7 @@ function BulkConferirModal({ contas, onClose }: { contas: Conta[]; onClose: () =
   });
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:440, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease', padding:'28px 28px 20px' }}>
         {ok ? (
@@ -2129,7 +2130,7 @@ function BulkConferirModal({ contas, onClose }: { contas: Conta[]; onClose: () =
           </>
         )}
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -2173,7 +2174,7 @@ function BulkDivergenteModal({ contas, onClose }: { contas: Conta[]; onClose: ()
   };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:500, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:440, background:'#FFFFFF', borderRadius:14, zIndex:501, boxShadow:'0 20px 60px rgba(0,0,0,.15)', display:'flex', flexDirection:'column', fontFamily:'inherit', animation:'fadeUp .2s ease' }}>
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -2214,7 +2215,7 @@ function BulkDivergenteModal({ contas, onClose }: { contas: Conta[]; onClose: ()
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 

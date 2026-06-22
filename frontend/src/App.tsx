@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { NavigationGuardProvider } from './contexts/NavigationGuardContext'
 import { AppLayout } from './components/layout/AppLayout'
 import { AuthGuard } from './components/layout/AuthGuard'
 import { AuthProvider } from './contexts/AuthContext'
@@ -66,6 +67,7 @@ export default function App() {
     <GerencialAuthProvider>
     <ToastProvider>
     <BrowserRouter>
+    <NavigationGuardProvider>
       <Routes>
         {/* ── Gerencial ── */}
         <Route path="/gerencial/login" element={<GerencialLoginPage />} />
@@ -106,6 +108,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+    </NavigationGuardProvider>
     </BrowserRouter>
     </ToastProvider>
     </GerencialAuthProvider>

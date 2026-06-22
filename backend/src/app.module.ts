@@ -21,6 +21,7 @@ import { AccessProfilesModule } from './access-profiles/access-profiles.module';
 import { SearchModule } from './search/search.module';
 import { AppointmentTypesModule } from './appointment-types/appointment-types.module';
 import { ContractTemplatesModule } from './contract-templates/contract-templates.module';
+import { ContractsModule } from './contracts/contracts.module';
 import { ContactTypesModule } from './contact-types/contact-types.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ConversationsModule } from './conversations/conversations.module';
@@ -50,6 +51,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     AccessProfilesModule,
     SearchModule,
     ContractTemplatesModule,
+    ContractsModule,
     ContactTypesModule,
     WhatsAppModule,
     ConversationsModule,

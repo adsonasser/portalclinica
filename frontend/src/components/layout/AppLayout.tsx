@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { useNavigationGuard } from '../../contexts/NavigationGuardContext';
 import { GlobalSearch } from '../GlobalSearch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ const NAV: NavItem[] = [
 
 const SETTINGS: NavItem = { key: 'settings', icon: 'ti-settings', label: 'Configurações', path: '/settings', module: 'settings' };
 
-const TOP_H  = 60;
+const TOP_H  = 68;
 const IMP_H  = 36;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -94,12 +95,36 @@ function formatDateShort(d: Date): string {
   return `${day} de ${month} de ${year}`;
 }
 
+function formatDateLine(d: Date): string {
+  return `${DAYS_PT[d.getDay()]}, ${String(d.getDate()).padStart(2,'0')} de ${MONTHS_PT[d.getMonth()]}`;
+}
+
+function weatherIcon(code: number): string {
+  if (code === 0)         return '☀️';
+  if (code <= 2)          return '⛅';
+  if (code <= 3)          return '☁️';
+  if (code <= 49)         return '🌫️';
+  if (code <= 67)         return '🌧️';
+  if (code <= 77)         return '❄️';
+  if (code <= 82)         return '🌦️';
+  if (code <= 99)         return '⛈️';
+  return '🌡️';
+}
+
+const QUICK_ACTIONS = [
+  { icon: 'ti-user-plus',      label: 'Novo contato',      path: '/patients?new=1',                 color: '#2563EB', bg: '#EFF6FF' },
+  { icon: 'ti-calendar-plus',  label: 'Novo agendamento',  path: '/agenda?new=1',                   color: '#7C3AED', bg: '#F5F3FF' },
+  { icon: 'ti-receipt',        label: 'Nova venda',        path: '/financial?tab=vendas&new=1',     color: '#16A34A', bg: '#F0FDF4' },
+  { icon: 'ti-cash',           label: 'Novo lançamento',   path: '/financial?tab=contas&new=1',     color: '#D97706', bg: '#FFFBEB' },
+] as const;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AppLayout() {
   const { user, logout } = useAuth();
   const { canView, isAdmin } = usePermissions();
   const location         = useLocation();
   const navigate         = useNavigate();
+  const { requestNavigate } = useNavigationGuard();
   const mainRef          = useRef<HTMLElement>(null);
 
   const [tip,           setTip]           = useState<{ label: string; y: number } | null>(null);
@@ -109,6 +134,9 @@ export function AppLayout() {
   const [scrolled,      setScrolled]      = useState(false);
   const [avatarMenu,    setAvatarMenu]    = useState<{ x: number; y: number } | null>(null);
   const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [weather,       setWeather]       = useState<{ temp: number; code: number } | null>(null);
+  const [quickNewOpen,  setQuickNewOpen]  = useState(false);
+  const quickNewRef = useRef<HTMLDivElement>(null);
   const [impSession, _setImpSession] = useState<{ clinicId: string; clinicName: string } | null>(() => {
     try { return JSON.parse(localStorage.getItem('impersonate_session') ?? 'null'); }
     catch { return null; }
@@ -144,13 +172,46 @@ export function AppLayout() {
   // Close flyout on route change
   useEffect(() => { setFlyoutItem(null); }, [location.pathname, location.search]);
 
-  const hour      = now.getHours();
-  const greeting  = getGreeting(hour);
-  const firstName = user?.name?.split(' ')[0] ?? null;
-  const dateStr   = formatDate(now);
-  const dateShort = formatDateShort(now);
-
+  // Derived values needed by effects below — must come before useEffects that reference them
   const city: string | null = (user?.clinic as any)?.city ?? null;
+  const appName: string     = (user?.clinic as any)?.appName || 'ClínicaFlow';
+
+  // Fetch weather from Open-Meteo (free, no key required)
+  useEffect(() => {
+    if (!city) return;
+    let cancelled = false;
+    const fetchWeather = async () => {
+      try {
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=pt&format=json`);
+        const geo    = await geoRes.json();
+        if (cancelled || !geo?.results?.[0]) return;
+        const { latitude, longitude } = geo.results[0];
+        const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`);
+        const wx    = await wxRes.json();
+        if (cancelled || !wx?.current) return;
+        setWeather({ temp: Math.round(wx.current.temperature_2m), code: wx.current.weather_code });
+      } catch { /* clima é opcional — falha silenciosa */ }
+    };
+    fetchWeather();
+    return () => { cancelled = true; };
+  }, [city]);
+
+  // Close quick-new dropdown on outside click
+  useEffect(() => {
+    if (!quickNewOpen) return;
+    const h = (e: MouseEvent) => {
+      if (quickNewRef.current && !quickNewRef.current.contains(e.target as Node)) setQuickNewOpen(false);
+    };
+    document.addEventListener('click', h);
+    return () => document.removeEventListener('click', h);
+  }, [quickNewOpen]);
+
+  const hour        = now.getHours();
+  const greeting    = getGreeting(hour);
+  const firstName   = user?.name?.split(' ')[0] ?? null;
+  const dateStr     = formatDate(now);
+  const dateShort   = formatDateShort(now);
+  const dateLineStr = formatDateLine(now);
 
   const primaryColor = useMemo(() => {
     try { return localStorage.getItem('pcl_primary_color') || '#000000'; } catch { return '#000000'; }
@@ -221,7 +282,7 @@ export function AppLayout() {
 
   const scheduleFlyoutClose = () => {
     if (openTimerRef.current) clearTimeout(openTimerRef.current);
-    closeTimerRef.current = setTimeout(() => setFlyoutItem(null), 200);
+    closeTimerRef.current = setTimeout(() => setFlyoutItem(null), 500);
   };
 
   // ─── Nav button ────────────────────────────────────────────────────────────
@@ -229,6 +290,13 @@ export function AppLayout() {
   const navBtn = (item: NavItem) => {
     const active      = isParentActive(item);
     const hasSubItems = Boolean(item.subItems?.length);
+    const flyoutOpen  = flyoutItem?.key === item.key;
+
+    const openFlyoutNow = (anchorY: number) => {
+      clearTimers();
+      setFlyoutItem(item);
+      setFlyoutAnchorY(anchorY);
+    };
 
     const onEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -250,16 +318,48 @@ export function AppLayout() {
       if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
     };
 
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (hasSubItems) {
+        if (flyoutOpen) {
+          clearTimers();
+          setFlyoutItem(null);
+        } else {
+          openFlyoutNow(e.currentTarget.getBoundingClientRect().top);
+        }
+      } else {
+        requestNavigate(item.path);
+      }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (hasSubItems && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        if (flyoutOpen) {
+          clearTimers();
+          setFlyoutItem(null);
+        } else {
+          openFlyoutNow(e.currentTarget.getBoundingClientRect().top);
+        }
+      }
+    };
+
     return (
       <button
         key={item.key}
-        onClick={() => navigate(item.subItems?.[0]?.path || item.path)}
+        onClick={handleClick}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
-        onFocus={e => { if (!hasSubItems) { const r = e.currentTarget.getBoundingClientRect(); setTip({ label: item.label, y: r.top + r.height / 2 }); } }}
+        onFocus={e => {
+          if (!hasSubItems) {
+            const r = e.currentTarget.getBoundingClientRect();
+            setTip({ label: item.label, y: r.top + r.height / 2 });
+          }
+        }}
         onBlur={() => setTip(null)}
+        onKeyDown={handleKeyDown}
         aria-label={item.label}
-        aria-expanded={hasSubItems ? flyoutItem?.key === item.key : undefined}
+        aria-haspopup={hasSubItems ? 'menu' : undefined}
+        aria-expanded={hasSubItems ? flyoutOpen : undefined}
         style={{
           width: 38, height: 38, borderRadius: '50%',
           border:      active ? `1.5px solid ${primaryColor}22` : 'none',
@@ -270,14 +370,17 @@ export function AppLayout() {
         }}
       >
         <i className={`ti ${item.icon}`} style={{ fontSize: 18, color: active ? primaryColor : '#18181B' }} />
-        {/* Dot indicator for items with submenus */}
+        {/* Chevron badge — indica que existem submenus */}
         {hasSubItems && (
           <span style={{
-            position: 'absolute', bottom: 3, right: 3,
-            width: 4, height: 4, borderRadius: '50%',
-            background: active ? primaryColor : '#C4C4C8',
+            position: 'absolute', bottom: 2, right: 2,
+            width: 11, height: 11, borderRadius: '50%',
+            background: active ? primaryColor : '#D4D4D8',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
-          }} />
+          }}>
+            <i className="ti ti-chevron-right" style={{ fontSize: 6, color: active ? '#fff' : '#71717A', lineHeight: 1 }} />
+          </span>
         )}
       </button>
     );
@@ -316,6 +419,14 @@ export function AppLayout() {
         </div>
       )}
 
+      {/* ── Flyout backdrop invisível (fecha ao clicar fora, sem interceptar mouse events) ── */}
+      {flyoutItem && (
+        <div
+          onClick={() => setFlyoutItem(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 9989, background: 'transparent' }}
+        />
+      )}
+
       {/* ── Flyout panel ── */}
       {flyoutItem && flyoutItem.subItems && (
         <div
@@ -340,14 +451,15 @@ export function AppLayout() {
         >
           {/* Header */}
           <div style={{ padding: '6px 10px 10px', borderBottom: '1px solid #F0F0F2', marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#09090B', letterSpacing: '-0.2px' }}>
-              {flyoutItem.label}
-            </div>
-            {flyoutItem.desc && (
-              <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 2 }}>
-                {flyoutItem.desc}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#09090B', letterSpacing: '-0.2px' }}>
+                {flyoutItem.label}
               </div>
-            )}
+              <i className="ti ti-chevron-right" style={{ fontSize: 11, color: '#C4C4C8' }} />
+            </div>
+            <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 2 }}>
+              Escolha uma opção
+            </div>
           </div>
 
           {/* Sub-items */}
@@ -356,7 +468,7 @@ export function AppLayout() {
             return (
               <button
                 key={sub.key}
-                onClick={() => { navigate(sub.path); setFlyoutItem(null); }}
+                onClick={() => { requestNavigate(sub.path); setFlyoutItem(null); }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                   padding: '8px 10px', border: 'none', cursor: 'pointer',
@@ -398,13 +510,17 @@ export function AppLayout() {
           from { opacity: 0; transform: translateX(-10px) scale(0.97); }
           to   { opacity: 1; transform: translateX(0)     scale(1); }
         }
+        @keyframes quickNewIn {
+          from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
         .topbar-date-short { display: none; }
         .topbar-date-full  { display: inline; }
-        @media (max-width: 900px) {
+        @media (max-width: 1100px) {
           .topbar-date-full  { display: none; }
           .topbar-date-short { display: inline; }
         }
-        @media (max-width: 600px) {
+        @media (max-width: 700px) {
           .topbar-date-short { display: none; }
         }
       `}</style>
@@ -412,74 +528,173 @@ export function AppLayout() {
       {/* ── Top Bar ── */}
       <header style={{
         position: 'fixed', top: 0, left: 0, right: 0, height: TOP_H,
-        zIndex: 30,
-        background: scrolled ? 'rgba(255,255,255,0.80)' : 'rgba(255,255,255,0.60)',
-        backdropFilter:       'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        borderBottom: '1px solid rgba(255,255,255,0.5)',
-        boxShadow: scrolled ? '0 2px 16px rgba(0,0,0,0.08)' : '0 1px 0 rgba(255,255,255,0.6)',
+        zIndex: 40,
+        background: scrolled ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.72)',
+        backdropFilter:       'blur(24px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(200%)',
+        borderBottom: '1px solid rgba(15,23,42,0.07)',
+        boxShadow: scrolled
+          ? '0 4px 20px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,0.6) inset'
+          : '0 1px 0 rgba(255,255,255,0.6) inset',
         transition: 'background 0.2s, box-shadow 0.2s',
         display: 'flex', alignItems: 'center',
-        padding: '0 24px 0 0',
+        padding: '0 20px 0 0',
       }}>
+        {/* Sidebar spacer */}
         <div style={{ width: 80, flexShrink: 0 }} />
 
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#18181B', whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {greeting}{firstName ? `, ${firstName}` : ''}
-          </span>
-          <span style={{ color: '#D1D5DB', fontSize: 13, flexShrink: 0 }}>·</span>
-          <span className="topbar-date-full" style={{ fontSize: 12, color: '#71717A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {dateStr}
-          </span>
-          <span className="topbar-date-short" style={{ fontSize: 12, color: '#71717A', whiteSpace: 'nowrap' }}>
-            {dateShort}
-          </span>
-          {city && (
-            <>
-              <span style={{ color: '#D1D5DB', fontSize: 13, flexShrink: 0 }}>·</span>
-              <span style={{ fontSize: 12, color: '#71717A', whiteSpace: 'nowrap', flexShrink: 0 }}>{city}</span>
-            </>
-          )}
+        {/* ── LEFT — Brand + Greeting ── */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
+
+          {/* Brand identity */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 10,
+              background: 'linear-gradient(135deg, #09090B 0%, #27272A 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+            }}>
+              <i className="ti ti-stethoscope" style={{ fontSize: 16, color: '#FFFFFF' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#09090B', letterSpacing: '-0.4px', lineHeight: 1.15, whiteSpace: 'nowrap' }}>
+                {appName}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: '#A1A1AA', lineHeight: 1.2, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
+                Sistema de gestão
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 34, background: 'rgba(0,0,0,0.07)', flexShrink: 0 }} />
+
+          {/* Greeting + date */}
+          <div style={{ minWidth: 0, overflow: 'hidden' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+              {greeting}{firstName ? `, ${firstName}` : ''}
+            </div>
+            <div style={{ lineHeight: 1.3, marginTop: 2 }}>
+              <span className="topbar-date-full" style={{ fontSize: 11, color: '#71717A', whiteSpace: 'nowrap' }}>
+                {dateLineStr}
+              </span>
+              <span className="topbar-date-short" style={{ fontSize: 11, color: '#71717A', whiteSpace: 'nowrap' }}>
+                {dateShort}
+              </span>
+            </div>
+          </div>
         </div>
 
+        {/* ── CENTER — GlobalSearch (absolute) ── */}
         <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
           <GlobalSearch />
         </div>
 
+        {/* ── RIGHT — Weather + Actions + Profile ── */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+
+          {/* Weather badge */}
+          {weather && city && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 99,
+              background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.05)',
+              whiteSpace: 'nowrap', marginRight: 4,
+            }}>
+              <span style={{ fontSize: 14, lineHeight: 1 }}>{weatherIcon(weather.code)}</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>{city}</span>
+              <span style={{ fontSize: 11, color: '#71717A' }}>·</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#09090B' }}>{weather.temp}°C</span>
+            </div>
+          )}
+
+          {/* + Novo button */}
+          <div ref={quickNewRef} style={{ position: 'relative' }}>
+            <button
+              onClick={e => { e.stopPropagation(); setQuickNewOpen(o => !o); }}
+              style={{
+                height: 32, padding: '0 12px',
+                background: quickNewOpen ? '#27272A' : '#09090B',
+                border: 'none', borderRadius: 8,
+                fontSize: 12, fontWeight: 600, color: '#FFFFFF',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
+                fontFamily: 'inherit', transition: 'background 0.15s',
+              }}
+              onMouseEnter={e => { if (!quickNewOpen) (e.currentTarget as HTMLElement).style.background = '#27272A'; }}
+              onMouseLeave={e => { if (!quickNewOpen) (e.currentTarget as HTMLElement).style.background = '#09090B'; }}
+              title="Criar novo"
+            >
+              <i className="ti ti-plus" style={{ fontSize: 13 }} />
+              Novo
+            </button>
+
+            {quickNewOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                width: 220, background: '#FFFFFF',
+                border: '1px solid rgba(0,0,0,0.07)', borderRadius: 12,
+                boxShadow: '0 12px 32px rgba(0,0,0,0.14)', zIndex: 9999,
+                padding: 4, fontFamily: "'Inter', system-ui, sans-serif",
+                animation: 'quickNewIn 0.15s cubic-bezier(0.16,1,0.3,1)',
+              }}>
+                {QUICK_ACTIONS.map(a => (
+                  <button key={a.path}
+                    onClick={() => { setQuickNewOpen(false); navigate(a.path); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 10px', border: 'none', background: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: '#18181B', fontFamily: 'inherit', textAlign: 'left' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F5F5F7'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
+                  >
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: a.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <i className={`ti ${a.icon}`} style={{ fontSize: 14, color: a.color }} />
+                    </div>
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Notifications */}
           <button
-            style={{ width: 34, height: 34, borderRadius: '50%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', color: '#71717A' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; (e.currentTarget as HTMLElement).style.color = '#000'; }}
+            style={{ width: 34, height: 34, borderRadius: '50%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', color: '#71717A', transition: 'background 0.15s, color 0.15s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; (e.currentTarget as HTMLElement).style.color = '#09090B'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#71717A'; }}
             title="Notificações"
           >
             <i className="ti ti-bell" style={{ fontSize: 17 }} />
-            <span style={{ position: 'absolute', top: 7, right: 7, width: 6, height: 6, borderRadius: '50%', background: '#DC2626', border: '1.5px solid #F8F9FA' }} />
+            <span style={{ position: 'absolute', top: 8, right: 8, width: 5, height: 5, borderRadius: '50%', background: '#DC2626', border: '1.5px solid rgba(255,255,255,0.8)' }} />
           </button>
 
+          {/* Help */}
           <button
-            style={{ width: 34, height: 34, borderRadius: '50%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#71717A' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; (e.currentTarget as HTMLElement).style.color = '#000'; }}
+            style={{ width: 34, height: 34, borderRadius: '50%', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#71717A', transition: 'background 0.15s, color 0.15s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; (e.currentTarget as HTMLElement).style.color = '#09090B'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#71717A'; }}
             title="Ajuda"
           >
-            <i className="ti ti-help" style={{ fontSize: 17 }} />
+            <i className="ti ti-help-circle" style={{ fontSize: 17 }} />
           </button>
 
           <div style={{ width: 1, height: 22, background: 'rgba(0,0,0,0.08)', margin: '0 4px' }} />
 
+          {/* Avatar */}
           <button
             onClick={e => openAvatarMenu(e)}
             title={user?.name || 'Minha conta'}
-            style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', borderRadius: '50%', padding: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 20, padding: '4px 6px 4px 4px', transition: 'background 0.15s' }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.05)'}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}
           >
             {user?.avatarUrl
-              ? <img src={user.avatarUrl} alt={user.name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
-              : <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#18181B', border: '1px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#FFFFFF' }}>
+              ? <img src={user.avatarUrl} alt={user.name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid rgba(0,0,0,0.08)' }} />
+              : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #09090B 0%, #3F3F46 100%)', border: '1.5px solid rgba(0,0,0,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#FFFFFF', flexShrink: 0 }}>
                   {user?.name?.[0]?.toUpperCase()}
                 </div>
             }
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#09090B', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {firstName}
+            </span>
+            <i className="ti ti-chevron-down" style={{ fontSize: 11, color: '#A1A1AA', flexShrink: 0 }} />
           </button>
         </div>
       </header>
@@ -516,7 +731,7 @@ export function AppLayout() {
         top: topOffset + 12,
         bottom: 12,
         width: 56,
-        zIndex: 25,
+        zIndex: 9995,
         borderRadius: 28,
         background: 'rgba(255,255,255,0.55)',
         backdropFilter:       'blur(24px) saturate(180%)',
@@ -566,7 +781,7 @@ export function AppLayout() {
             { icon: 'ti-settings', label: 'Configurações', path: '/settings' },
           ] as const).map(item => (
             <button key={item.label}
-              onClick={() => { setAvatarMenu(null); navigate(item.path); }}
+              onClick={() => { setAvatarMenu(null); requestNavigate(item.path); }}
               style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '8px 12px', border: 'none', background: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, color: '#374151', fontFamily: 'inherit', textAlign: 'left' }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#F4F4F5'}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'none'}

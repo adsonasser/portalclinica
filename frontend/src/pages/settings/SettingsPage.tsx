@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi, contactTypesApi } from '../../services/api';
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
+import { Portal } from '../../components/ui/Portal';
 
 // ─── Nav Items ────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
@@ -235,11 +236,12 @@ function DreAccountsView({ onBack }: { onBack: () => void }) {
         </table>
       </div>
       {showForm && (
-        <>
-          <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>{editItem ? 'Editar conta' : 'Nova conta DRE'}</div>
+        <Portal>
+          <>
+            <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>{editItem ? 'Editar conta' : 'Nova conta DRE'}</div>
               <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
             </div>
             <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -258,7 +260,8 @@ function DreAccountsView({ onBack }: { onBack: () => void }) {
               <button onClick={handleSave} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar alterações' : 'Criar conta'}</button>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -266,6 +269,7 @@ function DreAccountsView({ onBack }: { onBack: () => void }) {
 
 // ─── Doc Templates (evolução + receituário) ────────────────────────────────────
 const TEMPLATE_TYPES = ['Evolução', 'Anamnese', 'Prescrição', 'Receita', 'Atestado', 'Declaração', 'Orientações', 'Exames', 'Outros'];
+const RECEITUARIO_TYPES = ['Receita', 'Receita controlada', 'Solicitação de exames', 'Atestado', 'Declaração', 'Orientações', 'Plano terapêutico', 'Outro'];
 const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
   'Evolução':    { bg: '#F0FDFA', color: '#0D9488' }, 'Anamnese':    { bg: '#EFF6FF', color: '#2563EB' },
   'Prescrição':  { bg: '#F5F3FF', color: '#7C3AED' }, 'Receita':     { bg: '#ECFEFF', color: '#0E7490' },
@@ -281,15 +285,16 @@ const TEMPLATE_VARS = [
 ];
 function stripTags(html: string) { return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim(); }
 
-function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }: {
-  onBack: () => void; parentLabel: string; title: string; subtitle: string; mc: ModInfo; lockType?: string;
+function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType, isReceituario = false }: {
+  onBack: () => void; parentLabel: string; title: string; subtitle: string; mc: ModInfo; lockType?: string; isReceituario?: boolean;
 }) {
   const qc = useQueryClient();
+  const defaultType = isReceituario ? 'Receita' : (lockType || 'Evolução');
   const [search,          setSearch]          = useState('');
   const [filterType,      setFilterType]      = useState(lockType || 'Todos');
   const [drawerOpen,      setDrawerOpen]      = useState(false);
   const [editingTpl,      setEditingTpl]      = useState<any>(null);
-  const [form,            setForm]            = useState({ name: '', type: lockType || 'Evolução', description: '', active: true });
+  const [form,            setForm]            = useState({ name: '', type: defaultType, description: '', active: true });
   const [deleteConfirm,   setDeleteConfirm]   = useState<string | null>(null);
   const [editorContent,   setEditorContent]   = useState('');
   const [drawerError,     setDrawerError]     = useState<string | null>(null);
@@ -308,7 +313,7 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }
     queryFn: () => prontuarioApi.listDocTemplates(false),
   });
 
-  const invalidate = () => { qc.invalidateQueries({ queryKey: ['doc-templates-all'] }); qc.invalidateQueries({ queryKey: ['doc-templates'] }); };
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ['doc-templates-all'] }); qc.invalidateQueries({ queryKey: ['doc-templates'] }); qc.invalidateQueries({ queryKey: ['receituario-templates'] }); };
 
   const createMut = useMutation({ mutationFn: (d: any) => prontuarioApi.createDocTemplate(d), onSuccess: () => { invalidate(); setDrawerSuccess(true); setTimeout(closeDrawer, 1200); }, onError: (e: any) => { const r = e?.response?.data?.message; setDrawerError(Array.isArray(r) ? r.join(' · ') : (r || e?.message || 'Erro ao criar modelo.')); } });
   const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => prontuarioApi.updateDocTemplate(id, data), onSuccess: () => { invalidate(); setDrawerSuccess(true); setTimeout(closeDrawer, 1200); }, onError: (e: any) => { const r = e?.response?.data?.message; setDrawerError(Array.isArray(r) ? r.join(' · ') : (r || e?.message || 'Erro ao salvar.')); } });
@@ -317,17 +322,17 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }
   const openDrawer = (tpl?: any) => {
     setDrawerError(null); setDrawerSuccess(false);
     if (tpl) { setEditingTpl(tpl); setForm({ name: tpl.name, type: tpl.type, description: tpl.description || '', active: tpl.active }); setEditorContent(tpl.content || ''); }
-    else      { setEditingTpl(null); setForm({ name: '', type: lockType || 'Evolução', description: '', active: true }); setEditorContent(''); }
+    else      { setEditingTpl(null); setForm({ name: '', type: defaultType, description: '', active: true }); setEditorContent(''); }
     setDrawerOpen(true);
   };
-  const closeDrawer = () => { setDrawerOpen(false); setEditingTpl(null); setForm({ name: '', type: lockType || 'Evolução', description: '', active: true }); setEditorContent(''); setDrawerError(null); setDrawerSuccess(false); };
+  const closeDrawer = () => { setDrawerOpen(false); setEditingTpl(null); setForm({ name: '', type: defaultType, description: '', active: true }); setEditorContent(''); setDrawerError(null); setDrawerSuccess(false); };
 
   const handleSave = () => {
     setDrawerError(null);
     const rawHtml = editorContent || editorRef.current?.innerHTML || '';
     if (!form.name.trim()) { setDrawerError('O nome do modelo é obrigatório.'); return; }
     if (!stripTags(rawHtml)) { setDrawerError('O conteúdo do modelo é obrigatório.'); return; }
-    const data = { name: form.name.trim(), type: form.type, description: form.description, content: rawHtml, active: form.active, showInProntuario: true, generatePdf: false, requiresSignature: false, behavior: 'prontuario' };
+    const data = { name: form.name.trim(), type: form.type, description: form.description, content: rawHtml, active: form.active, showInProntuario: !isReceituario, generatePdf: false, requiresSignature: false, behavior: isReceituario ? 'receituario' : 'prontuario' };
     if (editingTpl) updateMut.mutate({ id: editingTpl.id, data });
     else createMut.mutate(data);
   };
@@ -336,12 +341,13 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }
   const execCmd            = (cmd: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, undefined); };
 
   const filtered = (allTpls as any[]).filter(t =>
+    (isReceituario ? t.showInProntuario === false : t.showInProntuario !== false) &&
     (!lockType || t.type === lockType) &&
     (!search || t.name.toLowerCase().includes(search.toLowerCase())) &&
     (filterType === 'Todos' || t.type === filterType)
   );
   const isSaving = createMut.isPending || updateMut.isPending;
-  const typeOptions = lockType ? [lockType] : TEMPLATE_TYPES;
+  const typeOptions = isReceituario ? RECEITUARIO_TYPES : (lockType ? [lockType] : TEMPLATE_TYPES);
 
   return (
     <SubView title={title} desc={subtitle} icon={lockType ? 'ti-pill' : 'ti-file-text'} iconBg={mc.bg} iconColor={mc.color} parentLabel={parentLabel} onBack={onBack}
@@ -405,16 +411,17 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }
 
       {/* Drawer */}
       {drawerOpen && (
-        <>
-          <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', zIndex: 1000 }} />
-          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 560, background: '#fff', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 32px rgba(0,0,0,.12)', animation: 'slideInRight 0.22s ease' }}>
+        <Portal>
+          <>
+            <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', zIndex: 1000 }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 560, background: '#fff', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 32px rgba(0,0,0,.12)', animation: 'slideInRight 0.22s ease' }}>
             <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div><div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>{editingTpl ? `Editar modelo` : `Novo modelo`}</div><div style={{ fontSize: 12, color: '#71717A', marginTop: 2 }}>{editingTpl ? `Editando: ${editingTpl.name}` : 'Preencha os dados do novo modelo'}</div></div>
               <button onClick={closeDrawer} style={{ width: 32, height: 32, border: '1px solid #E4E4E7', borderRadius: 8, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}><i className="ti ti-x" style={{ fontSize: 16 }} /></button>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Nome do modelo *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Evolução sessão de fisioterapia" style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} /></div>
-              {!lockType && (
+              {(!lockType || isReceituario) && (
                 <div><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Tipo *</label><select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', boxSizing: 'border-box' }}>{typeOptions.map(t => <option key={t}>{t}</option>)}</select></div>
               )}
               <div><label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>Descrição</label><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Breve descrição (opcional)" style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#09090B', background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} /></div>
@@ -451,7 +458,8 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType }
               </div>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -607,22 +615,24 @@ function RoomsView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         </div>
       )}
       {showForm && (
-        <>
-          <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 420, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar sala' : 'Nova sala'}</div><button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button></div>
-            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div><label style={lblStyle}>Nome da sala *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: Sala 1, Consultório A..." style={inpStyle} /></div>
-              <div><label style={lblStyle}>Capacidade (pessoas)</label><input type="number" min={1} value={fCap} onChange={e => setFCap(Number(e.target.value))} style={inpStyle} /></div>
-              <div><label style={lblStyle}>Descrição</label><input value={fDesc} onChange={e => setFDesc(e.target.value)} placeholder="Observações (opcional)" style={inpStyle} /></div>
-              {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+        <Portal>
+          <>
+            <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 420, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar sala' : 'Nova sala'}</div><button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button></div>
+              <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div><label style={lblStyle}>Nome da sala *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: Sala 1, Consultório A..." style={inpStyle} /></div>
+                <div><label style={lblStyle}>Capacidade (pessoas)</label><input type="number" min={1} value={fCap} onChange={e => setFCap(Number(e.target.value))} style={inpStyle} /></div>
+                <div><label style={lblStyle}>Descrição</label><input value={fDesc} onChange={e => setFDesc(e.target.value)} placeholder="Observações (opcional)" style={inpStyle} /></div>
+                {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+              </div>
+              <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
+                <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={handleSave} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar sala'}</button>
+              </div>
             </div>
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
-              <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-              <button onClick={handleSave} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar sala'}</button>
-            </div>
-          </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -781,9 +791,10 @@ function ProfileDrawer({ profile, onClose, onSaved }: { profile: any | null; onC
   const categories = [...new Set(PERM_MODULES.map(m => m.category))];
 
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', zIndex: 9500, backdropFilter: 'blur(2px)' }} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 700, background: '#F8F9FA', zIndex: 9501, display: 'flex', flexDirection: 'column', fontFamily: "'Inter',system-ui,sans-serif", boxShadow: '-8px 0 40px rgba(0,0,0,.14)', animation: 'slideIn .2s ease' }}>
+    <Portal>
+      <>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', zIndex: 9500, backdropFilter: 'blur(2px)' }} />
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 700, background: '#F8F9FA', zIndex: 9501, display: 'flex', flexDirection: 'column', fontFamily: "'Inter',system-ui,sans-serif", boxShadow: '-8px 0 40px rgba(0,0,0,.14)', animation: 'slideIn .2s ease' }}>
 
         {/* Header */}
         <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E4E4E7', padding: '18px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -947,7 +958,8 @@ function ProfileDrawer({ profile, onClose, onSaved }: { profile: any | null; onC
           </button>
         </div>
       </div>
-    </>
+      </>
+    </Portal>
   );
 }
 
@@ -1192,11 +1204,12 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         )}
       </div>
       {showForm && (
-        <>
-          <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar usuário' : 'Novo usuário'}</div>
+        <Portal>
+          <>
+            <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar usuário' : 'Novo usuário'}</div>
               <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
             </div>
             <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1240,7 +1253,8 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
               <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar usuário'}</button>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -1437,9 +1451,10 @@ function AppointmentTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo 
 
       {/* Drawer */}
       {drawerOpen && (
-        <>
-          <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, background: '#FFF', zIndex: 9001, boxShadow: '-4px 0 32px rgba(0,0,0,.14)', display: 'flex', flexDirection: 'column', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideRight .22s cubic-bezier(0.32,0.72,0,1)' }}>
+        <Portal>
+          <>
+            <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, background: '#FFF', zIndex: 9001, boxShadow: '-4px 0 32px rgba(0,0,0,.14)', display: 'flex', flexDirection: 'column', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideRight .22s cubic-bezier(0.32,0.72,0,1)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #E4E4E7', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 9, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1529,7 +1544,8 @@ function AppointmentTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo 
               </button>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -1710,11 +1726,12 @@ function ContactTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         </table>
       </div>
       {showForm && (
-        <>
-          <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar tipo' : 'Novo tipo'}</div>
+        <Portal>
+          <>
+            <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 400, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar tipo' : 'Novo tipo'}</div>
               <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
             </div>
             <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1740,7 +1757,8 @@ function ContactTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
               </button>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -1802,21 +1820,23 @@ function PaymentMethodsView({ onBack, mc }: { onBack: () => void; mc: ModInfo })
         )}
       </div>
       {showForm && (
-        <>
-          <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 420, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar forma' : 'Nova forma de pagamento'}</div><button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button></div>
-            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div><label style={lblStyle}>Nome *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: PIX, Cartão Visa..." style={inpStyle} /></div>
-              <div><label style={lblStyle}>Tipo</label><select value={fType} onChange={e => setFType(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }}>{PAYMENT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></div>
-              {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+        <Portal>
+          <>
+            <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 420, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar forma' : 'Nova forma de pagamento'}</div><button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button></div>
+              <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div><label style={lblStyle}>Nome *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Ex: PIX, Cartão Visa..." style={inpStyle} /></div>
+                <div><label style={lblStyle}>Tipo</label><select value={fType} onChange={e => setFType(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }}>{PAYMENT_TYPES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></div>
+                {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+              </div>
+              <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
+                <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar'}</button>
+              </div>
             </div>
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
-              <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-              <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar'}</button>
-            </div>
-          </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -1976,9 +1996,10 @@ function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo
 
       {/* Drawer */}
       {drawerOpen && (
-        <>
-          <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', zIndex: 1000 }} />
-          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 600, background: '#fff', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 32px rgba(0,0,0,.12)', animation: 'slideInRight 0.22s ease' }}>
+        <Portal>
+          <>
+            <div onClick={closeDrawer} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.32)', zIndex: 1000 }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 600, background: '#fff', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 32px rgba(0,0,0,.12)', animation: 'slideInRight 0.22s ease' }}>
             <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>{editingTpl ? 'Editar modelo' : 'Novo modelo de contrato'}</div>
@@ -2038,7 +2059,8 @@ function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo
               </div>
             </div>
           </div>
-        </>
+          </>
+        </Portal>
       )}
     </SubView>
   );
@@ -2082,7 +2104,7 @@ export function SettingsPage() {
         case 'agenda-holidays':     return <HolidaysView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'contatos-types':      return <ContactTypesView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'modelos-documentos':  return <DocTemplatesView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Modelos de evolução" subtitle="Templates de evolução clínica para inserção no prontuário." mc={mc} />;
-        case 'modelos-receituario': return <DocTemplatesView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Modelos de receituário" subtitle="Templates para receitas e prescrições médicas." mc={mc} lockType="Prescrição" />;
+        case 'modelos-receituario': return <DocTemplatesView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Modelos de receituário" subtitle="Templates para receitas e prescrições médicas." mc={mc} isReceituario={true} />;
         case 'prontuario-types':    return <PlaceholderSubView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Tipos de registros" mc={mc} />;
         case 'dre-contas':          return <DreAccountsView onBack={() => setOpenSubItem(null)} />;
         case 'payment-methods':     return <PaymentMethodsView onBack={() => setOpenSubItem(null)} mc={mc} />;
@@ -2227,50 +2249,78 @@ function IntegrationsView() {
   );
 }
 
+type WaProvider = 'evolution_api' | 'whatsapp_web_js' | 'whatsapp_cloud_api';
+
+const PROVIDERS: { id: WaProvider; label: string; icon: string; soon?: boolean }[] = [
+  { id: 'evolution_api',      label: 'Evolution API',         icon: 'ti-server' },
+  { id: 'whatsapp_web_js',    label: 'WhatsApp Web JS',       icon: 'ti-qrcode' },
+  { id: 'whatsapp_cloud_api', label: 'Cloud API Oficial',     icon: 'ti-brand-meta', soon: true },
+];
+
 function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data: cfg } = useQuery({
-    queryKey: ['wp-config'],
-    queryFn: () => whatsAppApi.getConfig(),
+  const [activeProvider, setActiveProvider] = useState<WaProvider>('evolution_api');
+
+  const { data: integrations, refetch: refetchIntegrations } = useQuery({
+    queryKey: ['wp-integrations'],
+    queryFn: () => whatsAppApi.getAllIntegrations(),
     retry: false,
   });
+
+  const cfg = integrations?.find((i: any) => i.provider === activeProvider) ?? null;
+
   const { data: status, refetch: refetchStatus } = useQuery({
-    queryKey: ['wp-config-status'],
+    queryKey: ['wp-status', activeProvider],
     queryFn: () => whatsAppApi.getStatus(),
-    enabled: !!cfg,
+    enabled: !!cfg && activeProvider !== 'whatsapp_cloud_api',
     retry: false,
     refetchInterval: cfg ? 10000 : false,
   });
 
+  // Evolution API fields
   const [baseUrl,      setBaseUrl]      = useState('');
   const [apiKey,       setApiKey]       = useState('');
   const [instanceName, setInstanceName] = useState('');
   const [webhookUrl,   setWebhookUrl]   = useState('');
   const [active,       setActive]       = useState(true);
-  const [qrData,       setQrData]       = useState<{ qrcode: string | null } | null>(null);
-  const [qrLoading,    setQrLoading]    = useState(false);
-  const [saving,       setSaving]       = useState(false);
+
+  // QR state (shared, used differently per provider)
+  const [qrData,    setQrData]    = useState<{ qrcode: string | null } | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [saving,    setSaving]    = useState(false);
 
   useEffect(() => {
     if (cfg) {
       setBaseUrl(cfg.baseUrl || '');
-      setApiKey('');  // never prefill the masked key
+      setApiKey('');
       setInstanceName(cfg.instanceName || '');
       setWebhookUrl(cfg.webhookUrl || '');
       setActive(cfg.active ?? true);
+    } else {
+      setBaseUrl(''); setApiKey(''); setInstanceName(''); setWebhookUrl(''); setActive(true);
     }
-  }, [cfg]);
+    setQrData(null);
+  }, [activeProvider, integrations]);
 
   const handleSave = async () => {
-    if (!baseUrl || !instanceName) { toast('URL base e nome da instância são obrigatórios', 'error'); return; }
-    if (!cfg && !apiKey) { toast('API Key obrigatória na primeira configuração', 'error'); return; }
+    if (activeProvider === 'evolution_api') {
+      if (!baseUrl || !instanceName) { toast('URL base e nome da instância são obrigatórios', 'error'); return; }
+      if (!cfg && !apiKey) { toast('API Key obrigatória na primeira configuração', 'error'); return; }
+    }
     setSaving(true);
     try {
-      await whatsAppApi.saveConfig({ baseUrl, apiKey: apiKey || undefined, instanceName, active, webhookUrl: webhookUrl || undefined });
-      qc.invalidateQueries({ queryKey: ['wp-config'] });
-      qc.invalidateQueries({ queryKey: ['wp-status'] });
+      const payload: any = { provider: activeProvider, active };
+      if (activeProvider === 'evolution_api') {
+        payload.baseUrl = baseUrl;
+        payload.apiKey = apiKey || undefined;
+        payload.instanceName = instanceName;
+        payload.webhookUrl = webhookUrl || undefined;
+      }
+      await whatsAppApi.saveConfig(payload);
+      refetchIntegrations();
+      qc.invalidateQueries({ queryKey: ['wp-status', activeProvider] });
       toast('Configuração salva com sucesso!', 'success');
       setApiKey('');
     } catch (err: any) {
@@ -2283,8 +2333,7 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
     try {
       const result = await whatsAppApi.generateQrCode();
       setQrData(result);
-      // Start polling status
-      setTimeout(() => { refetchStatus(); qc.invalidateQueries({ queryKey: ['wp-status'] }); }, 3000);
+      setTimeout(() => refetchStatus(), 3000);
     } catch (err: any) {
       toast(err?.response?.data?.message || 'Erro ao gerar QR Code', 'error');
     } finally { setQrLoading(false); }
@@ -2293,9 +2342,8 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
   const handleDisconnect = async () => {
     try {
       await whatsAppApi.disconnect();
-      qc.invalidateQueries({ queryKey: ['wp-config'] });
-      qc.invalidateQueries({ queryKey: ['wp-status'] });
-      qc.invalidateQueries({ queryKey: ['wp-config-status'] });
+      refetchIntegrations();
+      qc.invalidateQueries({ queryKey: ['wp-status', activeProvider] });
       toast('WhatsApp desconectado', 'success');
     } catch (err: any) {
       toast(err?.response?.data?.message || 'Erro ao desconectar', 'error');
@@ -2305,146 +2353,248 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
   const isConnected = status?.connected === true;
 
   return (
-    <>
-      {/* Overlay */}
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 998 }} />
-      {/* Panel */}
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 480, background: '#FFFFFF', zIndex: 999, boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.22s ease', fontFamily: "'Inter', system-ui, sans-serif" }}>
-        {/* Header */}
-        <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <i className="ti ti-brand-whatsapp" style={{ fontSize: 20, color: '#16A34A' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>WhatsApp — Evolution API</div>
-            <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Configure e gerencie a conexão do WhatsApp</div>
-          </div>
-          <button onClick={onClose} style={{ width: 32, height: 32, border: 'none', background: 'transparent', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}>
-            <i className="ti ti-x" style={{ fontSize: 16 }} />
-          </button>
-        </div>
+    <Portal>
+      <>
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 998 }} />
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 520, background: '#FFFFFF', zIndex: 999, boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.22s ease', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-          {/* Warning */}
-          <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10 }}>
-            <i className="ti ti-alert-triangle" style={{ fontSize: 15, color: '#D97706', flexShrink: 0, marginTop: 1 }} />
-            <div style={{ fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
-              Esta integração usa Evolution API / WhatsApp Web. É indicada para testes e operação inicial, mas <strong>não é a integração oficial da Meta</strong>. Pode haver desconexões ou instabilidade.
+          {/* Header */}
+          <div style={{ flexShrink: 0, padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <i className="ti ti-brand-whatsapp" style={{ fontSize: 20, color: '#16A34A' }} />
             </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>WhatsApp — Integrações</div>
+              <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Escolha e configure o provedor de conexão</div>
+            </div>
+            <button onClick={onClose} style={{ width: 32, height: 32, border: 'none', background: 'transparent', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}>
+              <i className="ti ti-x" style={{ fontSize: 16 }} />
+            </button>
           </div>
 
-          {/* Connection status */}
-          {cfg && (
-            <div style={{ background: isConnected ? '#F0FDF4' : '#FEF2F2', border: `1px solid ${isConnected ? '#BBF7D0' : '#FECACA'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: isConnected ? '#16A34A' : '#DC2626', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: isConnected ? '#15803D' : '#DC2626' }}>
-                  {isConnected ? 'Conectado' : 'Desconectado'}
+          {/* Provider selector */}
+          <div style={{ flexShrink: 0, padding: '14px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', gap: 8 }}>
+            {PROVIDERS.map(p => {
+              const pCfg = integrations?.find((i: any) => i.provider === p.id);
+              const isActive = activeProvider === p.id;
+              const isConn = pCfg?.status === 'connected';
+              return (
+                <button key={p.id} onClick={() => { if (!p.soon) setActiveProvider(p.id); }}
+                  style={{
+                    flex: 1, padding: '10px 8px', borderRadius: 10, cursor: p.soon ? 'default' : 'pointer',
+                    border: `1.5px solid ${isActive ? '#000000' : '#E4E4E7'}`,
+                    background: isActive ? '#000000' : '#FFFFFF',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    opacity: p.soon ? 0.5 : 1,
+                    transition: 'all .15s',
+                  }}>
+                  <i className={`ti ${p.icon}`} style={{ fontSize: 18, color: isActive ? '#FFFFFF' : '#71717A' }} />
+                  <div style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#FFFFFF' : '#09090B', textAlign: 'center', lineHeight: 1.3 }}>
+                    {p.label}
+                    {p.soon && <span style={{ display: 'block', fontSize: 10, color: isActive ? '#FFFFFF99' : '#A1A1AA' }}>em breve</span>}
+                  </div>
+                  {!p.soon && pCfg && (
+                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: isConn ? '#16A34A' : '#D97706' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Body */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+            {/* ── Evolution API ── */}
+            {activeProvider === 'evolution_api' && (
+              <>
+                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10 }}>
+                  <i className="ti ti-alert-triangle" style={{ fontSize: 15, color: '#D97706', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>
+                    Esta integração usa Evolution API. É indicada para testes e operação inicial, mas <strong>não é a integração oficial da Meta</strong>. Pode haver desconexões ou instabilidade.
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>Instância: {cfg.instanceName}</div>
+
+                {cfg && (
+                  <div style={{ background: isConnected ? '#F0FDF4' : '#FEF2F2', border: `1px solid ${isConnected ? '#BBF7D0' : '#FECACA'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: isConnected ? '#16A34A' : '#DC2626', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: isConnected ? '#15803D' : '#DC2626' }}>{isConnected ? 'Conectado' : 'Desconectado'}</div>
+                      <div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>Instância: {cfg.instanceName}</div>
+                    </div>
+                    {isConnected && (
+                      <button onClick={handleDisconnect} style={{ height: 28, padding: '0 10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 7, fontSize: 11, fontWeight: 600, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Desconectar
+                      </button>
+                    )}
+                    <button onClick={() => refetchStatus()} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <i className="ti ti-refresh" style={{ fontSize: 12 }} />
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>Configuração</div>
+                  <div>
+                    <label style={{ ...lblStyle, fontSize: 12 }}>URL base da Evolution API *</label>
+                    <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://evolution.seudominio.com.br" style={{ ...inpStyle }} />
+                  </div>
+                  <div>
+                    <label style={{ ...lblStyle, fontSize: 12 }}>API Key {cfg ? '(deixe em branco para manter)' : '*'}</label>
+                    <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={cfg ? '••••••••••••••••' : 'Cole a sua API Key aqui'} style={{ ...inpStyle }} />
+                  </div>
+                  <div>
+                    <label style={{ ...lblStyle, fontSize: 12 }}>Nome da instância *</label>
+                    <input value={instanceName} onChange={e => setInstanceName(e.target.value)} placeholder="clinica_001" style={{ ...inpStyle }} />
+                    <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>Use letras, números e underscores. Ex: clinica_mariasilva</div>
+                  </div>
+                  <div>
+                    <label style={{ ...lblStyle, fontSize: 12 }}>Webhook URL (para receber mensagens)</label>
+                    <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://api.seusistema.com.br/api/webhooks/evolution/whatsapp" style={{ ...inpStyle }} />
+                    <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>URL pública que a Evolution API deve chamar ao receber mensagens</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input type="checkbox" id="wa-active-ev" checked={active} onChange={e => setActive(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#000' }} />
+                    <label htmlFor="wa-active-ev" style={{ fontSize: 13, color: '#374151', cursor: 'pointer' }}>Integração ativa</label>
+                  </div>
+                </div>
+
+                {cfg && !isConnected && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>Conectar via QR Code</div>
+                    <div style={{ background: '#F8F9FA', border: '1px solid #E4E4E7', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      {qrData?.qrcode ? (
+                        <>
+                          <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8 }} />
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
+                            Abra o WhatsApp → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie.
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ width: 64, height: 64, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-qrcode" style={{ fontSize: 28, color: '#16A34A' }} />
+                          </div>
+                          <div style={{ fontSize: 13, color: '#71717A', textAlign: 'center' }}>Clique em "Gerar QR Code" para conectar</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── WhatsApp Web JS ── */}
+            {activeProvider === 'whatsapp_web_js' && (
+              <>
+                <div style={{ background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: 10, padding: '14px 16px', display: 'flex', gap: 10 }}>
+                  <i className="ti ti-alert-triangle-filled" style={{ fontSize: 16, color: '#D97706', flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 12, color: '#78350F', lineHeight: 1.7 }}>
+                    <strong>Atenção:</strong> Esta integração usa conexão via WhatsApp Web. É indicada para testes e operação inicial, mas <strong>não é a integração oficial da Meta</strong>. Pode haver desconexões, instabilidade ou risco de bloqueio do número. Use com cautela em produção.
+                  </div>
+                </div>
+
+                {cfg && (
+                  <div style={{ background: isConnected ? '#F0FDF4' : '#FEF2F2', border: `1px solid ${isConnected ? '#BBF7D0' : '#FECACA'}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: isConnected ? '#16A34A' : '#DC2626', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: isConnected ? '#15803D' : '#DC2626' }}>{isConnected ? 'Conectado' : 'Desconectado'}</div>
+                      <div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>Instância: {cfg.instanceName}</div>
+                    </div>
+                    {isConnected && (
+                      <button onClick={handleDisconnect} style={{ height: 28, padding: '0 10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 7, fontSize: 11, fontWeight: 600, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Desconectar
+                      </button>
+                    )}
+                    <button onClick={() => refetchStatus()} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <i className="ti ti-refresh" style={{ fontSize: 12 }} />
+                    </button>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>Configuração</div>
+
+                  <div>
+                    <label style={{ ...lblStyle, fontSize: 12 }}>Nome da integração</label>
+                    <input value={instanceName} onChange={e => setInstanceName(e.target.value)}
+                      placeholder={`clinic_...`}
+                      style={{ ...inpStyle }} />
+                    <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>
+                      A instância é gerada automaticamente pelo sistema. Você pode personalizar o nome.
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input type="checkbox" id="wa-active-wjs" checked={active} onChange={e => setActive(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#000' }} />
+                    <label htmlFor="wa-active-wjs" style={{ fontSize: 13, color: '#374151', cursor: 'pointer' }}>Integração ativa</label>
+                  </div>
+                </div>
+
+                {/* QR Code area — shown after saving */}
+                {cfg && !isConnected && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>Conectar via QR Code</div>
+                    <div style={{ background: '#F8F9FA', border: '1px solid #E4E4E7', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                      {qrData?.qrcode ? (
+                        <>
+                          <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8 }} />
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
+                            Abra o WhatsApp → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie.
+                          </div>
+                          <div style={{ fontSize: 11, color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <i className="ti ti-refresh" style={{ fontSize: 11 }} />
+                            Aguardando autenticação...
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ width: 64, height: 64, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-qrcode" style={{ fontSize: 28, color: '#16A34A' }} />
+                          </div>
+                          <div style={{ fontSize: 13, color: '#71717A', textAlign: 'center' }}>Clique em "Conectar WhatsApp" para gerar o QR Code</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Cloud API — em breve ── */}
+            {activeProvider === 'whatsapp_cloud_api' && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 64, height: 64, borderRadius: 16, background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="ti ti-brand-meta" style={{ fontSize: 28, color: '#7C3AED' }} />
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>WhatsApp Cloud API</div>
+                <div style={{ fontSize: 13, color: '#71717A', lineHeight: 1.7, maxWidth: 340 }}>
+                  A integração com a API oficial da Meta está em desenvolvimento. Esta opção permitirá conexão direta e estável, sem risco de bloqueio e sem depender de aplicativo no celular.
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99, background: '#F5F3FF', color: '#7C3AED' }}>Em breve</div>
               </div>
-              {isConnected && (
-                <button onClick={handleDisconnect}
-                  style={{ height: 28, padding: '0 10px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 7, fontSize: 11, fontWeight: 600, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Desconectar
+            )}
+          </div>
+
+          {/* Footer */}
+          {activeProvider !== 'whatsapp_cloud_api' && (
+            <div style={{ flexShrink: 0, borderTop: '1px solid #E4E4E7', padding: '16px 24px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button onClick={handleSave} disabled={saving}
+                style={{ height: 38, padding: '0 18px', background: '#000000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+                {saving ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-device-floppy" style={{ fontSize: 14 }} />}
+                Salvar configuração
+              </button>
+              {cfg && !isConnected && (
+                <button onClick={handleQrCode} disabled={qrLoading}
+                  style={{ height: 38, padding: '0 16px', background: '#FFFFFF', border: '1px solid #16A34A', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#16A34A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: qrLoading ? 0.7 : 1 }}>
+                  {qrLoading ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-qrcode" style={{ fontSize: 14 }} />}
+                  {activeProvider === 'whatsapp_web_js' ? 'Conectar WhatsApp' : 'Gerar QR Code'}
                 </button>
               )}
-              <button onClick={() => { refetchStatus(); qc.invalidateQueries({ queryKey: ['wp-status'] }); }}
-                style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
-                <i className="ti ti-refresh" style={{ fontSize: 12 }} />
-              </button>
-            </div>
-          )}
-
-          {/* Config fields */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#09090B', textTransform: 'uppercase', letterSpacing: '.05em' }}>Configuração da API</div>
-
-            <div>
-              <label style={{ ...lblStyle, fontSize: 12 }}>URL base da Evolution API *</label>
-              <input value={baseUrl} onChange={e => setBaseUrl(e.target.value)}
-                placeholder="https://evolution.seudominio.com.br"
-                style={{ ...inpStyle }} />
-            </div>
-
-            <div>
-              <label style={{ ...lblStyle, fontSize: 12 }}>API Key {cfg ? '(deixe em branco para manter)' : '*'}</label>
-              <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
-                placeholder={cfg ? '••••••••••••••••' : 'Cole a sua API Key aqui'}
-                style={{ ...inpStyle }} />
-            </div>
-
-            <div>
-              <label style={{ ...lblStyle, fontSize: 12 }}>Nome da instância *</label>
-              <input value={instanceName} onChange={e => setInstanceName(e.target.value)}
-                placeholder="clinica_001"
-                style={{ ...inpStyle }} />
-              <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>Use letras, números e underscores. Ex: clinica_mariasilva</div>
-            </div>
-
-            <div>
-              <label style={{ ...lblStyle, fontSize: 12 }}>Webhook URL (para receber mensagens)</label>
-              <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
-                placeholder="https://api.seusistema.com.br/api/webhooks/evolution/whatsapp"
-                style={{ ...inpStyle }} />
-              <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>URL pública que a Evolution API deve chamar ao receber mensagens</div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input type="checkbox" id="wa-active" checked={active} onChange={e => setActive(e.target.checked)}
-                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#000' }} />
-              <label htmlFor="wa-active" style={{ fontSize: 13, color: '#374151', cursor: 'pointer' }}>Integração ativa</label>
-            </div>
-          </div>
-
-          {/* QR Code area */}
-          {cfg && !isConnected && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#09090B', textTransform: 'uppercase', letterSpacing: '.05em' }}>Conectar via QR Code</div>
-              <div style={{ background: '#F8F9FA', border: '1px solid #E4E4E7', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                {qrData?.qrcode ? (
-                  <>
-                    <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8 }} />
-                    <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
-                      Abra o WhatsApp no celular → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie o código acima.
-                    </div>
-                    <div style={{ fontSize: 11, color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <i className="ti ti-refresh" style={{ fontSize: 11 }} />
-                      Verificando conexão automaticamente...
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ width: 80, height: 80, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className="ti ti-qrcode" style={{ fontSize: 36, color: '#16A34A' }} />
-                    </div>
-                    <div style={{ fontSize: 13, color: '#71717A', textAlign: 'center' }}>Clique em "Gerar QR Code" para conectar um número</div>
-                  </>
-                )}
-              </div>
             </div>
           )}
         </div>
-
-        {/* Footer */}
-        <div style={{ flexShrink: 0, borderTop: '1px solid #E4E4E7', padding: '16px 24px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={handleSave} disabled={saving}
-            style={{ height: 38, padding: '0 18px', background: '#000000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-            {saving ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-device-floppy" style={{ fontSize: 14 }} />}
-            Salvar configuração
-          </button>
-          {cfg && !isConnected && (
-            <button onClick={handleQrCode} disabled={qrLoading}
-              style={{ height: 38, padding: '0 16px', background: '#FFFFFF', border: '1px solid #16A34A', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#16A34A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: qrLoading ? 0.7 : 1 }}>
-              {qrLoading ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-qrcode" style={{ fontSize: 14 }} />}
-              Gerar QR Code
-            </button>
-          )}
-        </div>
-      </div>
-    </>
+      </>
+    </Portal>
   );
 }
 

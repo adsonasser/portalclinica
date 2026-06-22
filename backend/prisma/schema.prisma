@@ -182,6 +182,7 @@ model Clinic {
   categories          FinancialCategory[]
   paymentMethods      PaymentMethod[]
   sales               Sale[]
+  contracts           Contract[]
   products            Product[]
   productCategories   ProductCategory[]
   suppliers           Supplier[]
@@ -198,6 +199,7 @@ model Clinic {
   contractTemplates   ContractTemplate[]
   contactTypeDefinitions ClinicContactType[]
   whatsAppConfig      WhatsAppConfig?
+  integrations        Integration[]
   conversations       Conversation[]
   chatMessages        ChatMessage[]
 
@@ -338,6 +340,7 @@ model Patient {
   appointments    Appointment[]
   leads           Lead[]
   sales           Sale[]
+  contracts       Contract[]
   messages        Message[]
   patientNotes    PatientNote[]
   evolutionNotes  EvolutionNote[]
@@ -469,6 +472,7 @@ model EvolutionNote {
   patientId String
   content   String
   date      DateTime @default(now())
+  status    String   @default("finalized")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -758,6 +762,7 @@ model Sale {
   transactions  FinancialTransaction[]
   sessions      Session[]
   appointments  Appointment[]
+  contracts     Contract[]
 
   @@map("sales")
 }
@@ -1011,6 +1016,7 @@ model ContractTemplate {
   id          String   @id @default(cuid())
   clinicId    String
   name        String
+  type        String   @default("Prestação de serviço")
   description String?
   content     String
   variables   Json     @default("[]")
@@ -1018,10 +1024,41 @@ model ContractTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  plans  Plan[]
+  clinic    Clinic     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  plans     Plan[]
+  contracts Contract[]
 
   @@map("contract_templates")
+}
+
+model Contract {
+  id                 String    @id @default(cuid())
+  clinicId           String
+  patientId          String?
+  saleId             String?
+  contractTemplateId String?
+  title              String
+  type               String    @default("Prestação de serviço")
+  origin             String    @default("custom_blank")
+  status             String    @default("a_gerar")
+  contentSnapshot    String?
+  variablesSnapshot  Json?
+  itemsSnapshot      Json?
+  notes              String?
+  totalValue         Float?
+  generatedAt        DateTime?
+  signedAt           DateTime?
+  signedFileUrl      String?
+  createdByUserId    String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  clinic           Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient          Patient?          @relation(fields: [patientId], references: [id])
+  sale             Sale?             @relation(fields: [saleId], references: [id])
+  contractTemplate ContractTemplate? @relation(fields: [contractTemplateId], references: [id])
+
+  @@map("contracts")
 }
 
 model ClinicContactType {
@@ -1072,6 +1109,27 @@ model WhatsAppConfig {
   clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_configs")
+}
+
+model Integration {
+  id               String    @id @default(cuid())
+  clinicId         String
+  type             String    @default("whatsapp")
+  provider         String    @default("evolution_api")
+  instanceName     String    @default("")
+  status           String    @default("not_configured")
+  configEncrypted  String?
+  metadata         Json?
+  lastConnectionAt DateTime?
+  lastDisconnectAt DateTime?
+  lastMessageAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@unique([clinicId, type, provider])
+  @@map("integrations")
 }
 
 model Conversation {

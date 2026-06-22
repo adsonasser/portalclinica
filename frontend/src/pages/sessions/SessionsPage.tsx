@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { sessionsApi, agendaApi, prontuarioApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { TableActions } from '../../components/ui/TableActions';
+import { Portal } from '../../components/ui/Portal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionStatus =
@@ -371,7 +372,7 @@ function AgendarPanel({ session, allSessions, onClose, onSaved }: {
   const timelineHeight = 13 * HOUR_H;
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:9000, backdropFilter:'blur(3px)' }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'min(88vw, 1100px)', background:'#FFFFFF', zIndex:9001, boxShadow:'-8px 0 40px rgba(0,0,0,.18)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
 
@@ -532,7 +533,7 @@ function AgendarPanel({ session, allSessions, onClose, onSaved }: {
           </div>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -565,21 +566,23 @@ function ContextMenu({ pos, onClose, onCancel, onOpenPatient, onOpenSale, onNi }
   ];
 
   return (
-    <div ref={ref} style={{ position:'fixed', top:pos.y, left:pos.x, zIndex:9500, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', padding:'4px', minWidth:190, animation:'fadeUp .12s ease' }}>
-      {items.map((item, i) =>
-        item === null ? (
-          <div key={i} style={{ height:1, background:'#F1F5F9', margin:'3px 0' }} />
-        ) : (
-          <button key={item.label} onClick={item.action}
-            style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'7px 12px', border:'none', background:'none', borderRadius:7, cursor:'pointer', fontSize:13, color: item.danger ? '#DC2626' : '#374151', fontFamily:'inherit', textAlign:'left' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = item.danger ? '#FEF2F2' : '#F4F4F5'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; }}>
-            <i className={`ti ${item.icon}`} style={{ fontSize:14, color: item.danger ? '#DC2626' : '#71717A' }} />
-            {item.label}
-          </button>
-        )
-      )}
-    </div>
+    <Portal>
+      <div ref={ref} style={{ position:'fixed', top:pos.y, left:pos.x, zIndex:9500, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,.12)', padding:'4px', minWidth:190, animation:'fadeUp .12s ease' }}>
+        {items.map((item, i) =>
+          item === null ? (
+            <div key={i} style={{ height:1, background:'#F1F5F9', margin:'3px 0' }} />
+          ) : (
+            <button key={item.label} onClick={item.action}
+              style={{ display:'flex', alignItems:'center', gap:9, width:'100%', padding:'7px 12px', border:'none', background:'none', borderRadius:7, cursor:'pointer', fontSize:13, color: item.danger ? '#DC2626' : '#374151', fontFamily:'inherit', textAlign:'left' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = item.danger ? '#FEF2F2' : '#F4F4F5'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; }}>
+              <i className={`ti ${item.icon}`} style={{ fontSize:14, color: item.danger ? '#DC2626' : '#71717A' }} />
+              {item.label}
+            </button>
+          )
+        )}
+      </div>
+    </Portal>
   );
 }
 
@@ -609,7 +612,7 @@ function FinalizarModal({ sessao, patientId, onClose, onSaved }: {
   const inp2: React.CSSProperties = { width:'100%', padding:'8px 12px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, color:'#09090B', fontFamily:'inherit', outline:'none', resize:'vertical', boxSizing:'border-box', background:'#FFFFFF' };
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:9800, backdropFilter:'blur(3px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:'min(90vw,520px)', background:'#FFFFFF', borderRadius:20, zIndex:9801, boxShadow:'0 20px 60px rgba(0,0,0,.22)', padding:'24px', fontFamily:"'Inter',system-ui,sans-serif" }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
@@ -651,7 +654,7 @@ function FinalizarModal({ sessao, patientId, onClose, onSaved }: {
           </div>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -668,7 +671,7 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
   const proximaAgendar = pacote.sessoes.find(s => s.status === 'a_agendar');
 
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.35)', zIndex:300, backdropFilter:'blur(2px)' }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'min(92vw,900px)', background:'#FFFFFF', zIndex:301, display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", boxShadow:'-8px 0 40px rgba(0,0,0,.13)', animation:'slideIn .2s ease' }}>
 
@@ -779,7 +782,7 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
           )}
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 

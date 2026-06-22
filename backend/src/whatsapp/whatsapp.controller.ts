@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Query } from '@nestjs/common';
 import { WhatsAppService } from './whatsapp.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ClinicId } from '../common/decorators/clinic.decorator';
@@ -9,8 +9,16 @@ export class WhatsAppController {
   constructor(private readonly whatsAppService: WhatsAppService) {}
 
   @Get()
-  getConfig(@ClinicId() clinicId: string) {
+  getConfig(@ClinicId() clinicId: string, @Query('provider') provider?: string) {
+    if (provider) {
+      return this.whatsAppService.getIntegration(clinicId, provider);
+    }
     return this.whatsAppService.getConfig(clinicId);
+  }
+
+  @Get('all')
+  getAllIntegrations(@ClinicId() clinicId: string) {
+    return this.whatsAppService.getAllIntegrations(clinicId);
   }
 
   @Post()

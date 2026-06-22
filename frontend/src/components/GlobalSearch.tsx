@@ -129,10 +129,10 @@ export function GlobalSearch() {
         borderRadius: 18,
         boxShadow: '0 20px 60px rgba(0,0,0,0.14), 0 4px 16px rgba(0,0,0,0.06)',
         zIndex: 2147483647,
-        maxHeight: 500, overflowY: 'auto',
+        maxHeight: '60vh', overflowY: 'auto',
+        overscrollBehavior: 'contain',
         fontFamily: "'Inter', system-ui, sans-serif",
         animation: 'gsDropIn 0.14s cubic-bezier(0.32,0.72,0,1)',
-        overflow: 'hidden',
       }}
     >
       {loading && !results && (

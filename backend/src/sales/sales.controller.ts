@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ClinicId } from '../common/decorators/clinic.decorator';
@@ -24,8 +24,8 @@ export class SalesController {
   }
 
   @Post()
-  create(@ClinicId() clinicId: string, @Body() dto: any) {
-    return this.salesService.create(clinicId, dto);
+  create(@ClinicId() clinicId: string, @Body() dto: any, @Req() req: any) {
+    return this.salesService.create(clinicId, dto, req.user?.id);
   }
 
   @Post(':id/receive')

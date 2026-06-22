@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
+import { Portal } from '../../components/ui/Portal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Temperatura = 'frio' | 'morno' | 'quente';
@@ -74,12 +75,14 @@ function initials(nome: string) {
 // ─── Modais ───────────────────────────────────────────────────────────────────
 function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:600, backdropFilter:'blur(3px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:601, width:480, background:'#FFFFFF', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,.18)', display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", maxHeight:'88vh', animation:'fadeUp .16s ease' }}>
-        {children}
-      </div>
-    </>
+    <Portal>
+      <>
+        <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:600, backdropFilter:'blur(3px)' }} />
+        <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:601, width:480, background:'#FFFFFF', borderRadius:18, boxShadow:'0 24px 64px rgba(0,0,0,.18)', display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", maxHeight:'88vh', animation:'fadeUp .16s ease' }}>
+          {children}
+        </div>
+      </>
+    </Portal>
   );
 }
 
@@ -320,35 +323,37 @@ function DragFooter({ visible, onDrop }: { visible: boolean; onDrop: (z: DropZon
   ];
 
   return (
-    <div style={{
-      position:'fixed', bottom:0, left:96, right:0, zIndex:400,
-      background:'rgba(9,9,11,.92)', backdropFilter:'blur(10px)',
-      padding:'12px 28px', display:'flex', gap:12,
-      transform: visible ? 'translateY(0)' : 'translateY(100%)',
-      transition:'transform .22s ease',
-      borderTop:'1px solid rgba(255,255,255,.08)',
-    }}>
-      <div style={{ display:'flex', alignItems:'center', fontSize:12, color:'rgba(255,255,255,.4)', gap:8, flexShrink:0, marginRight:4 }}>
-        <i className="ti ti-drag-drop" style={{ fontSize:14 }} /> Soltar aqui:
-      </div>
-      {zones.map(z => (
-        <div key={z.id}
-          onDragOver={e => handleOver(e, z.id)}
-          onDragLeave={handleLeave}
-          onDrop={e => handleDrop(e, z.id)}
-          style={{
-            flex:1, height:52, borderRadius:12, cursor:'copy',
-            border:`1.5px dashed ${z.color}55`,
-            background: hoveredZone === z.id ? z.hbg : z.bg,
-            display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-            color:z.color, fontSize:13, fontWeight:600,
-            transition:'background .12s',
-            transform: hoveredZone === z.id ? 'scale(1.015)' : 'scale(1)',
-          }}>
-          <i className={`ti ${z.icon}`} style={{ fontSize:18 }} /> {z.label}
+    <Portal>
+      <div style={{
+        position:'fixed', bottom:0, left:96, right:0, zIndex:400,
+        background:'rgba(9,9,11,.92)', backdropFilter:'blur(10px)',
+        padding:'12px 28px', display:'flex', gap:12,
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+        transition:'transform .22s ease',
+        borderTop:'1px solid rgba(255,255,255,.08)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', fontSize:12, color:'rgba(255,255,255,.4)', gap:8, flexShrink:0, marginRight:4 }}>
+          <i className="ti ti-drag-drop" style={{ fontSize:14 }} /> Soltar aqui:
         </div>
-      ))}
-    </div>
+        {zones.map(z => (
+          <div key={z.id}
+            onDragOver={e => handleOver(e, z.id)}
+            onDragLeave={handleLeave}
+            onDrop={e => handleDrop(e, z.id)}
+            style={{
+              flex:1, height:52, borderRadius:12, cursor:'copy',
+              border:`1.5px dashed ${z.color}55`,
+              background: hoveredZone === z.id ? z.hbg : z.bg,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              color:z.color, fontSize:13, fontWeight:600,
+              transition:'background .12s',
+              transform: hoveredZone === z.id ? 'scale(1.015)' : 'scale(1)',
+            }}>
+            <i className={`ti ${z.icon}`} style={{ fontSize:18 }} /> {z.label}
+          </div>
+        ))}
+      </div>
+    </Portal>
   );
 }
 

@@ -37,7 +37,7 @@ export class SalesService {
     return s;
   }
 
-  async create(clinicId: string, data: any) {
+  async create(clinicId: string, data: any, createdByUserId?: string) {
     const { items, payments: paymentsData = [], paidAmount: rawPaid, saleType, generateSessions, paymentDate, paymentMethodId: pmId, ...saleData } = data;
 
     const total = items.reduce(
@@ -123,8 +123,64 @@ export class SalesService {
         }
       }
 
+      // Auto-generate contracts for plans that have a linked contract template
+      await this._createContractsFromSale(tx, clinicId, sale.id, saleData.patientId, items, total, createdByUserId);
+
       return sale;
     });
+  }
+
+  private async _createContractsFromSale(
+    tx: any,
+    clinicId: string,
+    saleId: string,
+    patientId: string | undefined,
+    items: any[],
+    totalValue: number,
+    createdByUserId?: string,
+  ) {
+    const seenTemplates = new Set<string>();
+
+    for (const item of items) {
+      if (!item.planId) continue;
+
+      const plan = await tx.plan.findUnique({
+        where: { id: item.planId },
+        include: { contractTemplate: true },
+      });
+
+      if (!plan?.contractTemplate) continue;
+      if (seenTemplates.has(plan.contractTemplate.id)) continue;
+      seenTemplates.add(plan.contractTemplate.id);
+
+      const itemsSnapshot = JSON.stringify(
+        items
+          .filter((i) => i.planId === item.planId)
+          .map((i) => ({
+            name: i.name,
+            quantity: i.quantity ?? 1,
+            unitValue: i.unitPrice ?? i.total ?? 0,
+            totalValue: i.total ?? 0,
+            sessionsQuantity: plan.sessionsTotal > 0 ? plan.sessionsTotal : undefined,
+          })),
+      );
+
+      await tx.contract.create({
+        data: {
+          clinicId,
+          patientId: patientId ?? null,
+          saleId,
+          contractTemplateId: plan.contractTemplate.id,
+          title: plan.contractTemplate.name,
+          type: plan.contractTemplate.type,
+          origin: 'sale_auto',
+          status: 'a_gerar',
+          totalValue,
+          itemsSnapshot,
+          createdByUserId: createdByUserId ?? null,
+        },
+      });
+    }
   }
 
   private async _enrichItemsWithCategory(items: any[]): Promise<any[]> {

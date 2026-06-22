@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../components/ui/Toast';
+import { Portal } from '../../components/ui/Portal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ProdStatus = 'ok' | 'atencao' | 'estoque_baixo' | 'vencendo' | 'vencido' | 'sem_estoque' | 'inativo';
@@ -122,7 +123,7 @@ function NovaEntradaModal({ onClose, produtos, onSave }: { onClose: () => void; 
   const [prodId, setProdId] = useState(0);
   const [qty, setQty] = useState('');
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:300, backdropFilter:'blur(3px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:540, background:'#FFFFFF', borderRadius:18, zIndex:301, boxShadow:'0 24px 64px rgba(0,0,0,.16)', display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", animation:'fadeUp .18s ease', maxHeight:'90vh' }}>
         <div style={{ padding:'18px 24px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -194,7 +195,7 @@ function NovaEntradaModal({ onClose, produtos, onSave }: { onClose: () => void; 
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -203,7 +204,7 @@ function LancarConsumoModal({ onClose, produtos, onSave }: { onClose: () => void
   const [prodId, setProdId] = useState(0);
   const [qty, setQty] = useState('');
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:300, backdropFilter:'blur(3px)' }} />
       <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:540, background:'#FFFFFF', borderRadius:18, zIndex:301, boxShadow:'0 24px 64px rgba(0,0,0,.16)', display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", animation:'fadeUp .18s ease', maxHeight:'90vh' }}>
         <div style={{ padding:'18px 24px', borderBottom:'1px solid #F1F5F9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -271,7 +272,7 @@ function LancarConsumoModal({ onClose, produtos, onSave }: { onClose: () => void
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -284,7 +285,7 @@ function NovoProdutoModal({ onClose, onSave }: { onClose: () => void; onSave: (p
   const [minimo, setMinimo] = useState('0');
   const [ideal, setIdeal] = useState('0');
   return (
-    <>
+    <Portal>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:300, backdropFilter:'blur(3px)' }} />
       <div style={{ position:'fixed', top:0, right:0, bottom:0, width:700, background:'#F8F9FA', zIndex:301, display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", boxShadow:'-8px 0 48px rgba(0,0,0,.13)', animation:'slideIn .22s ease' }}>
         <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #E5E7EB', padding:'18px 24px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -408,7 +409,7 @@ function NovoProdutoModal({ onClose, onSave }: { onClose: () => void; onSave: (p
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 

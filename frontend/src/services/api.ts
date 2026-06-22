@@ -211,6 +211,11 @@ export const prontuarioApi = {
     api.get(`/prontuario/patient-documents/${patientId}`).then((r) => r.data),
   savePatientDocument: (patientId: string, data: any) =>
     api.post(`/prontuario/patient-documents/${patientId}`, data).then((r) => r.data),
+  // Rascunho (não vai para histórico clínico)
+  saveDraft: (patientId: string, content: string) =>
+    api.post(`/prontuario/draft/${patientId}`, { content }).then((r) => r.data),
+  deleteDraft: (patientId: string) =>
+    api.delete(`/prontuario/draft/${patientId}`).then((r) => r.data),
 };
 
 // ─── Sessions ────────────────────────────────────────────────────────────────
@@ -275,6 +280,17 @@ export const contractTemplatesApi = {
   remove: (id: string)              => api.delete(`/contract-templates/${id}`).then((r) => r.data),
 };
 
+// ─── Contracts ────────────────────────────────────────────────────────────────
+
+export const contractsApi = {
+  list:     (params?: any)             => api.get('/contracts', { params }).then((r) => r.data),
+  get:      (id: string)               => api.get(`/contracts/${id}`).then((r) => r.data),
+  create:   (data: any)                => api.post('/contracts', data).then((r) => r.data),
+  update:   (id: string, data: any)    => api.patch(`/contracts/${id}`, data).then((r) => r.data),
+  generate: (id: string, data: any)    => api.patch(`/contracts/${id}/generate`, data).then((r) => r.data),
+  remove:   (id: string)               => api.delete(`/contracts/${id}`).then((r) => r.data),
+};
+
 // ─── Contact Types ───────────────────────────────────────────────────────────
 
 export const contactTypesApi = {
@@ -287,7 +303,8 @@ export const contactTypesApi = {
 // ─── WhatsApp Integration ────────────────────────────────────────────────────
 
 export const whatsAppApi = {
-  getConfig: () => api.get('/integrations/whatsapp').then((r) => r.data),
+  getConfig: (provider?: string) => api.get('/integrations/whatsapp', { params: provider ? { provider } : {} }).then((r) => r.data),
+  getAllIntegrations: () => api.get('/integrations/whatsapp/all').then((r) => r.data),
   saveConfig: (data: any) => api.post('/integrations/whatsapp', data).then((r) => r.data),
   generateQrCode: () => api.post('/integrations/whatsapp/qrcode').then((r) => r.data),
   getStatus: () => api.get('/integrations/whatsapp/status').then((r) => r.data),
