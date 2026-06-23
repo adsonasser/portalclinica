@@ -2170,12 +2170,6 @@ export function SettingsPage() {
         [contenteditable]:empty:before { content: attr(data-placeholder); color: #A1A1AA; pointer-events: none; }
       `}</style>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F8F9FA', fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <div style={{ flexShrink: 0, background: '#fff', borderBottom: '1px solid #E5E7EB', padding: '18px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191C1D', margin: 0 }}>Configurações</h1>
-            <p style={{ fontSize: 12, color: '#71717A', margin: '2px 0 0' }}>Gerencie todas as configurações do sistema e personalize sua clínica.</p>
-          </div>
-        </div>
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
           {/* Left nav */}
           <div style={{ width: 228, flexShrink: 0, background: '#fff', borderRight: '1px solid #E5E7EB', overflowY: 'auto', padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -2698,15 +2692,6 @@ function OverviewSection({ goTo }: { goTo: (key: string) => void }) {
   const pctNone       = Math.round((notConfigured  / total) * 100);
   return (
     <div style={{ animation: 'fadeUp 0.2s ease' }}>
-      <div style={{ background: 'linear-gradient(135deg, #F8F7FF 0%, #EEF2FF 50%, #F0F9FF 100%)', border: '1px solid #E0E7FF', borderRadius: 16, padding: '22px 28px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 18 }}>
-        <div style={{ width: 52, height: 52, borderRadius: 14, background: 'rgba(79,70,229,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid rgba(79,70,229,.15)' }}>
-          <i className="ti ti-adjustments-horizontal" style={{ fontSize: 24, color: '#4F46E5' }} />
-        </div>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#191C1D', marginBottom: 2 }}>Central de configurações</div>
-          <div style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.5 }}>Organize usuários, agenda, atendimentos, financeiro e regras gerais do sistema.</div>
-        </div>
-      </div>
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '20px 24px', marginBottom: 20 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D', marginBottom: 14 }}>Resumo das configurações</div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><span style={{ fontSize: 12, color: '#71717A' }}>{configured} de {total} módulos configurados</span><span style={{ fontSize: 13, fontWeight: 700, color: '#191C1D' }}>{pctOk}%</span></div>
