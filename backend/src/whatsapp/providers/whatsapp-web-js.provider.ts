@@ -391,36 +391,50 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
       );
     }
 
-    try {
-      // If we have the real WhatsApp chat JID (stored from incoming message), use it directly.
-      // This bypasses getNumberId and works even for multi-device @lid senders.
-      if (chatId && chatId.includes('@')) {
-        const result = await state.client.sendMessage(chatId, text);
-        return { messageId: result?.id?.id ?? String(Date.now()), status: 'sent' };
-      }
+    // Build a list of JIDs to try in order
+    const rawDigits = (chatId ?? phone).replace(/@[^@]+$/, '').replace(/\D/g, '');
+    const jidsToTry: string[] = [];
 
-      // Fallback: resolve the WhatsApp JID from phone number via server lookup
-      const normalized = normalizePhone(phone);
-      if (!normalized || normalized.length < 10) {
-        throw new BadRequestException('Número de telefone inválido.');
-      }
-      const numberId = await state.client.getNumberId(normalized);
-      if (!numberId) {
-        throw new BadRequestException(
-          `Número ${phone} não encontrado no WhatsApp. Verifique se o contato usa WhatsApp.`,
-        );
-      }
-      const result = await state.client.sendMessage(numberId._serialized, text);
-      return {
-        messageId: result?.id?.id ?? String(Date.now()),
-        status: 'sent',
-      };
-    } catch (err: any) {
-      if (err?.status) throw err; // re-throw HttpExceptions as-is
-      this.logger.error(`[${clinicId}] Erro ao enviar mensagem: ${err?.message}`);
-      throw new BadRequestException(
-        `Erro ao enviar via WhatsApp: ${err?.message ?? 'erro desconhecido'}`,
-      );
+    // 1. Prefer the stored chat JID (most reliable when it's @c.us)
+    if (chatId && chatId.includes('@') && !chatId.includes('@s.whatsapp.net')) {
+      jidsToTry.push(chatId);
     }
+
+    // 2. Try @c.us and @lid variants of the raw digits
+    if (rawDigits) {
+      jidsToTry.push(`${rawDigits}@c.us`);
+      jidsToTry.push(`${rawDigits}@lid`);
+    }
+
+    // 3. Try via server-side number resolution (works for normal phones, fails for LIDs)
+    const normalized = normalizePhone(phone || rawDigits);
+    let resolvedJid: string | null = null;
+    if (normalized && normalized.length >= 10) {
+      try {
+        const numberId = await state.client.getNumberId(normalized);
+        if (numberId?._serialized) resolvedJid = numberId._serialized;
+      } catch { /* ignore */ }
+    }
+    if (resolvedJid && !jidsToTry.includes(resolvedJid)) {
+      jidsToTry.unshift(resolvedJid); // Highest priority when available
+    }
+
+    // Also add @s.whatsapp.net as last resort (legacy)
+    if (chatId?.includes('@s.whatsapp.net')) jidsToTry.push(chatId);
+
+    for (const jid of jidsToTry) {
+      try {
+        const result = await state.client.sendMessage(jid, text);
+        this.logger.log(`[${clinicId}] Mensagem enviada via ${jid}`);
+        return { messageId: result?.id?.id ?? String(Date.now()), status: 'sent' };
+      } catch (e: any) {
+        this.logger.warn(`[${clinicId}] Falha ao enviar para ${jid}: ${e?.message}`);
+      }
+    }
+
+    throw new BadRequestException(
+      'Não foi possível entregar a mensagem. Se o contato usa WhatsApp multi-dispositivo, ' +
+      'aguarde ele enviar uma nova mensagem e tente novamente.',
+    );
   }
 }
