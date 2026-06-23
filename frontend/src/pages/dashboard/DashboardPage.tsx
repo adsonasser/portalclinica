@@ -110,7 +110,7 @@ export function DashboardPage() {
             <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#71717A', marginBottom: 6 }}>Atenção agora</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#09090B', marginBottom: 2 }}>Agenda de hoje</div>
             <div style={{ fontSize: 12, color: '#71717A', marginBottom: 12 }}>{kpis.agendamentosHoje || 0} agendamentos programados para hoje</div>
-            <button onClick={() => navigate('/agenda')} style={{ width: '100%', height: 34, background: '#000000', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer' }}>
+            <button onClick={() => navigate('/agenda')} style={{ width: '100%', height: 36, background: '#000000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', fontFamily: "'Inter', system-ui, sans-serif" }}>
               Ver agenda completa
             </button>
           </div>
