@@ -737,13 +737,6 @@ export function AppLayout() {
         {NAV.filter(item => isAdmin || canView(item.module)).map(navBtn)}
         <div style={{ flex: 1 }} />
         {(isAdmin || canView(SETTINGS.module)) && navBtn(SETTINGS)}
-        {/* Version badge */}
-        <div title={`v${__APP_VERSION__} · ${__GIT_HASH__} · ${__BUILD_DATE__}`}
-          style={{ fontSize: 9, color: 'rgba(0,0,0,0.25)', letterSpacing: '.03em',
-            fontWeight: 600, marginTop: 4, cursor: 'default', userSelect: 'none',
-            fontFamily: 'monospace' }}>
-          {__GIT_HASH__}
-        </div>
       </nav>
 
       {/* ── Content area ── */}
@@ -800,6 +793,11 @@ export function AppLayout() {
             <i className="ti ti-logout" style={{ fontSize: 15, color: '#DC2626', flexShrink: 0 }} />
             Sair
           </button>
+          <div style={{ height: 1, background: '#F4F4F5', margin: '4px 0' }} />
+          <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 11, color: '#A1A1AA' }}>v{__APP_VERSION__}</span>
+            <span style={{ fontSize: 10, color: '#A1A1AA', fontFamily: 'monospace' }} title={`Build ${__BUILD_DATE__}`}>{__GIT_HASH__}</span>
+          </div>
         </div>
       )}
 

@@ -2721,20 +2721,6 @@ function OverviewSection({ goTo }: { goTo: (key: string) => void }) {
           ))}
         </div>
       </div>
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '16px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <i className="ti ti-versions" style={{ fontSize: 17, color: '#71717A' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#191C1D' }}>Versão do sistema</div>
-            <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Portal Clínica</div>
-          </div>
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#09090B', background: '#F4F4F5', padding: '4px 12px', borderRadius: 8, fontFamily: 'monospace' }}>
-          v{(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0')}
-        </span>
-      </div>
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D' }}>Status dos módulos</div>
