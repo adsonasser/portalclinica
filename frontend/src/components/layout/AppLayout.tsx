@@ -531,22 +531,17 @@ export function AppLayout() {
           : '0 1px 0 rgba(255,255,255,0.6) inset',
         transition: 'background 0.2s, box-shadow 0.2s',
         display: 'flex', alignItems: 'center',
-        padding: '0 20px 0 0',
+        padding: '0 20px 0 12px',
       }}>
-        {/* Sidebar spacer */}
-        <div style={{ width: 80, flexShrink: 0 }} />
-
         {/* ── LEFT — Brand + Greeting ── */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
 
           {/* Brand identity */}
-          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-            <img
-              src="/nassclin-logo.png"
-              alt="nassclin"
-              style={{ height: 22, width: 'auto', objectFit: 'contain', display: 'block' }}
-            />
-          </div>
+          <img
+            src="/nassclin-logo.png"
+            alt="nassclin"
+            style={{ height: 20, width: 'auto', objectFit: 'contain', display: 'block', flexShrink: 0 }}
+          />
 
           {/* Divider */}
           <div style={{ width: 1, height: 34, background: 'rgba(0,0,0,0.07)', flexShrink: 0 }} />
