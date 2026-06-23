@@ -168,7 +168,7 @@ export function AppLayout() {
 
   // Derived values needed by effects below — must come before useEffects that reference them
   const city: string | null = (user?.clinic as any)?.city ?? null;
-  const appName: string     = (user?.clinic as any)?.appName || 'ClínicaFlow';
+  // appName kept for document.title if needed in future
 
   // Fetch weather from Open-Meteo (free, no key required)
   useEffect(() => {
@@ -540,23 +540,12 @@ export function AppLayout() {
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
 
           {/* Brand identity */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 10,
-              background: 'linear-gradient(135deg, #09090B 0%, #27272A 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-            }}>
-              <i className="ti ti-stethoscope" style={{ fontSize: 16, color: '#FFFFFF' }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: '#09090B', letterSpacing: '-0.4px', lineHeight: 1.15, whiteSpace: 'nowrap' }}>
-                {appName}
-              </div>
-              <div style={{ fontSize: 10, fontWeight: 500, color: '#A1A1AA', lineHeight: 1.2, letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>
-                Sistema de gestão
-              </div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <img
+              src="/nassclin-logo.png"
+              alt="nassclin"
+              style={{ height: 22, width: 'auto', objectFit: 'contain', display: 'block' }}
+            />
           </div>
 
           {/* Divider */}
@@ -732,8 +721,12 @@ export function AppLayout() {
         border: '1px solid rgba(255,255,255,0.6)',
         boxShadow: '0 8px 32px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.8) inset',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        paddingTop: 16, paddingBottom: 16, gap: 4,
+        paddingTop: 12, paddingBottom: 16, gap: 4,
       }}>
+        {/* Brand mark */}
+        <div style={{ paddingBottom: 8, paddingTop: 2 }}>
+          <img src="/nc-symbol.png" alt="nassclin" style={{ width: 28, height: 28, objectFit: 'contain', display: 'block' }} />
+        </div>
         {NAV.filter(item => isAdmin || canView(item.module)).map(navBtn)}
         <div style={{ flex: 1 }} />
         {(isAdmin || canView(SETTINGS.module)) && navBtn(SETTINGS)}

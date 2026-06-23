@@ -22,15 +22,15 @@ interface LoginConfig {
 }
 
 const LOGIN_CONFIG: LoginConfig = {
-  appName: 'Portal Clínica',
-  logoUrl: '',
+  appName: 'nassclin',
+  logoUrl: '/nassclin-logo.png',
   leftTitle: 'Bem-vindo de volta',
   leftSubtitle: 'Acesse sua conta para continuar.',
   showSignupLink: false,
   supportLink: '',
   primaryColor: '#000000',
   year: 2026,
-  companyName: 'Portal Clínica',
+  companyName: 'nassclin',
   rightMessages: [
     {
       titulo: 'Gerencie seus pacientes e receitas em um só lugar',
@@ -376,17 +376,11 @@ export function LoginPage() {
 
               {/* Logo + brand */}
               <div style={{ marginBottom: 36 }}>
-                <div style={{
-                  width: 48, height: 48, borderRadius: 14,
-                  background: config.primaryColor,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  marginBottom: 16, boxShadow: '0 4px 14px rgba(0,0,0,.18)',
-                }}>
-                  <i className="ti ti-heart-rate-monitor" style={{ fontSize: 24, color: '#FFFFFF' }} />
-                </div>
-                <div style={{ fontSize: 12, color: '#A1A1AA', fontWeight: 500, marginBottom: 8, letterSpacing: '.03em' }}>
-                  {config.appName}
-                </div>
+                <img
+                  src={config.logoUrl}
+                  alt={config.appName}
+                  style={{ height: 32, width: 'auto', objectFit: 'contain', display: 'block', marginBottom: 28 }}
+                />
                 <h1 style={{ fontSize: 26, fontWeight: 700, color: '#09090B', margin: 0, letterSpacing: '-0.4px', lineHeight: 1.2 }}>
                   {config.leftTitle}
                 </h1>
@@ -537,7 +531,7 @@ export function LoginPage() {
 
               {/* Footer links */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginTop: 18, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, color: '#C4C4C4' }}>Portal Clínica v1.0</span>
+                <span style={{ fontSize: 10, color: '#C4C4C4' }}>nassclin</span>
                 {['LGPD', 'Privacidade', 'Suporte'].map((l) => (
                   <span key={l} style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ fontSize: 10, color: '#D4D4D8', margin: '0 6px' }}>·</span>

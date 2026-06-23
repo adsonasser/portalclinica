@@ -44,14 +44,14 @@ export function PageLoader() {
       background: '#FAFAFA', gap: 28,
     }}>
       {/* Logo mark */}
-      <div style={{
-        width: 52, height: 52, borderRadius: '50%',
-        background: '#000000',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        animation: '_pcl_pulse 2s ease-in-out infinite',
-      }}>
-        <i className="ti ti-stethoscope" style={{ fontSize: 22, color: '#FFFFFF' }} />
-      </div>
+      <img
+        src="/nassclin-logo.png"
+        alt="nassclin"
+        style={{
+          height: 28, width: 'auto', objectFit: 'contain',
+          animation: '_pcl_pulse 2s ease-in-out infinite',
+        }}
+      />
 
       {/* Indeterminate progress bar */}
       <div style={{
