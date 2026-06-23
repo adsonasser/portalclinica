@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../../../services/gerencialApi';
 import { useNavigate } from 'react-router-dom';
+import { Spinner } from '../../../components/ui/Loader';
 
 const STATUS_CFG: Record<string, { bg: string; color: string; label: string }> = {
   ATIVA:        { bg: 'rgba(22,163,74,.15)',  color: '#4ADE80', label: 'Ativa' },
@@ -24,12 +25,9 @@ export function GerencialDashboardPage() {
 
   if (isLoading) {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid rgba(99,102,241,.2)', borderTopColor: '#818CF8', borderRadius: '50%', animation: 'spin .8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ fontSize: 13, color: dark.muted }}>Carregando dados...</div>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <Spinner size={24} color="#818CF8" />
+        <span style={{ fontSize: 12, color: dark.muted }}>Carregando dados...</span>
       </div>
     );
   }

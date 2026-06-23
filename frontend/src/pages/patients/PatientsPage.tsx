@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
+import { TableLoader } from '../../components/ui/Loader';
 import { calcPatientScore, scoreBadge } from '../../utils/patientScore';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
@@ -243,7 +244,7 @@ export function PatientsPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</td></tr>
+                <TableLoader colSpan={7} />
               ) : patients.length === 0 ? (
                 <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center' }}>
                   <i className="ti ti-users" style={{ fontSize: 36, display: 'block', margin: '0 auto 10px', color: '#D4D4D8' }} />

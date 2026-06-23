@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { dashboardApi } from '../../services/api';
+import { SectionLoader } from '../../components/ui/Loader';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import { format } from 'date-fns';
 
@@ -17,17 +18,7 @@ export function DashboardPage() {
   const { data: stats, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.stats });
   const { data: chart } = useQuery({ queryKey: ['dashboard-chart'], queryFn: () => dashboardApi.chart(6) });
 
-  if (isLoading) {
-    return (
-      <div style={{ padding: '60px 40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '2.5px solid #000000', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ fontSize: 13, color: '#71717A' }}>Carregando dashboard...</div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <SectionLoader label="Carregando dashboard..." style={{ height: '60vh' }} />;
 
   const kpis = stats?.kpis || {};
   const proximos = stats?.proximosAgendamentos || [];

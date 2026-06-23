@@ -5,6 +5,7 @@ import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTy
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
+import { SectionLoader, TableLoader } from '../../components/ui/Loader';
 
 // ─── Nav Items ────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
@@ -366,7 +367,7 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType, 
       </div>
       <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E4E4E7', overflow: 'hidden' }}>
         {isLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando modelos...</div>
+          <SectionLoader label="Carregando modelos..." />
         ) : filtered.length === 0 ? (
           <div style={{ padding: '56px 40px', textAlign: 'center' }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#09090B', marginBottom: 6 }}>Nenhum modelo encontrado</div>
@@ -1014,7 +1015,7 @@ function AccessProfilesView({ onBack, mc }: { onBack: () => void; mc: ModInfo })
 
       <div style={{ background: '#fff', border: '1px solid #E4E4E7', borderRadius: 12, overflow: 'hidden' }}>
         {isLoading ? (
-          <div style={{ padding: 32, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando perfis...</div>
+          <SectionLoader label="Carregando perfis..." />
         ) : (profiles as any[]).length === 0 ? (
           <div style={{ padding: '40px 32px', textAlign: 'center' }}>
             <i className="ti ti-shield-off" style={{ fontSize: 36, color: '#D1D5DB', display: 'block', marginBottom: 12 }} />
@@ -1158,7 +1159,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     <SubView title="Usuários" desc="Gerencie os usuários com acesso ao sistema." icon="ti-users" iconBg={mc.bg} iconColor={mc.color} parentLabel="Usuários e permissões" onBack={onBack}
       actions={<button onClick={openNew} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}><i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo usuário</button>}>
       <div style={{ background: '#fff', border: '1px solid #E4E4E7', borderRadius: 12, overflow: 'hidden' }}>
-        {isLoading ? <div style={{ padding: 32, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</div> : (
+        {isLoading ? <SectionLoader /> : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>
               {['Usuário', 'E-mail', 'Perfil', 'Profissional', 'Agenda', 'Ações'].map((h, i) => (
@@ -1363,7 +1364,7 @@ function AppointmentTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo 
       }
     >
       {isLoading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</div>
+        <SectionLoader />
       ) : types.length === 0 ? (
         <div style={{ padding: '48px 40px', textAlign: 'center' }}>
           <div style={{ width: 52, height: 52, borderRadius: 14, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -1697,7 +1698,7 @@ function ContactTypesView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>{['Tipo', 'Status', 'Ações'].map((h, i) => <th key={h} style={{ padding: '9px 16px', textAlign: i === 2 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>)}</tr></thead>
           <tbody>
-            {isLoading && <tr><td colSpan={3} style={{ padding: '32px 16px', textAlign: 'center', fontSize: 13, color: '#A1A1AA' }}>Carregando...</td></tr>}
+            {isLoading && <TableLoader colSpan={3} />}
             {!isLoading && (types as any[]).map((t: any) => (
               <tr key={t.id} style={{ borderBottom: '1px solid #F4F4F5' }} onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 <td style={{ padding: '12px 16px' }}>
@@ -1797,7 +1798,7 @@ function PaymentMethodsView({ onBack, mc }: { onBack: () => void; mc: ModInfo })
     <SubView title="Formas de pagamento" desc="Configure os meios de pagamento aceitos pela clínica." icon="ti-credit-card" iconBg={mc.bg} iconColor={mc.color} parentLabel="Financeiro" onBack={onBack}
       actions={<button onClick={openNew} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}><i className="ti ti-plus" style={{ fontSize: 14 }} /> Nova forma</button>}>
       <div style={{ background: '#fff', border: '1px solid #E4E4E7', borderRadius: 12, overflow: 'hidden' }}>
-        {isLoading ? <div style={{ padding: 32, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando...</div> : (
+        {isLoading ? <SectionLoader /> : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: '#F4F4F5', borderBottom: '1px solid #E4E4E7' }}>{['Forma de pagamento', 'Tipo', 'Ações'].map((h, i) => <th key={h} style={{ padding: '9px 16px', textAlign: i === 2 ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>)}</tr></thead>
             <tbody>
@@ -1936,7 +1937,7 @@ function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo
 
       <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E4E4E7', overflow: 'hidden' }}>
         {isLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#71717A', fontSize: 13 }}>Carregando modelos...</div>
+          <SectionLoader label="Carregando modelos..." />
         ) : filtered.length === 0 ? (
           <div style={{ padding: '56px 40px', textAlign: 'center' }}>
             <div style={{ width: 52, height: 52, borderRadius: 14, background: mc.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>

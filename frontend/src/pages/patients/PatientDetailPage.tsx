@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { NovaVendaModal } from '../../components/NovaVendaModal';
 import { Portal } from '../../components/ui/Portal';
 import { calcPatientScore } from '../../utils/patientScore';
+import { SectionLoader } from '../../components/ui/Loader';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   ATIVO:         { bg: '#DCFCE7', color: '#16A34A', dot: '#22C55E', label: 'Ativo' },
@@ -297,10 +298,7 @@ function FinanceiroTab({ patient }: { patient: any }) {
 
       {/* Tabela */}
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px 0' }}>
-          <div style={{ width: 20, height: 20, border: '2.5px solid #000', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 8px' }} />
-          <div style={{ fontSize: 12, color: '#71717A' }}>Carregando...</div>
-        </div>
+        <SectionLoader size="sm" />
       ) : filteredSales.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <div style={{ width: 48, height: 48, borderRadius: 12, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
@@ -1259,17 +1257,7 @@ export function PatientDetailPage() {
     }
   }, [patient]);
 
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 28, height: 28, border: '2.5px solid #000', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 10px' }} />
-          <div style={{ fontSize: 13, color: '#71717A' }}>Carregando...</div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <SectionLoader style={{ height: '60vh' }} />;
 
   if (isError || !patient) {
     return (

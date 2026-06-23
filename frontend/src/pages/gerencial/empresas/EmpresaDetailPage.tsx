@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../../services/gerencialApi';
+import { Spinner } from '../../../components/ui/Loader';
 
 const STATUS_CFG: Record<string, { bg: string; color: string; label: string }> = {
   ATIVA:        { bg: 'rgba(22,163,74,.15)',  color: '#4ADE80', label: 'Ativa' },
@@ -88,8 +89,7 @@ export function EmpresaDetailPage() {
 
   if (isLoading) return (
     <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ width:24, height:24, border:'2px solid rgba(99,102,241,.2)', borderTopColor:'#818CF8', borderRadius:'50%', animation:'spin .8s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <Spinner size={24} color="#818CF8" />
     </div>
   );
 

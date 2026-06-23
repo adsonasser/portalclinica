@@ -6,6 +6,7 @@ import { NovaVendaModal } from '../../components/NovaVendaModal';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
+import { SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SaleStatus       = 'pago' | 'parcial' | 'nao_recebido' | 'vencido' | 'cancelado';
@@ -2460,10 +2461,7 @@ function ContasTab() {
 
       {/* Tabela */}
       {isLoading ? (
-        <div style={{ textAlign:'center', padding:48, color:'#71717A', fontSize:14 }}>
-          <i className="ti ti-loader-2" style={{ fontSize:28, display:'block', marginBottom:10, color:'#A1A1AA' }} />
-          Carregando movimentações...
-        </div>
+        <SectionLoader label="Carregando movimentações..." />
       ) : (
         <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', overflow:'hidden' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>

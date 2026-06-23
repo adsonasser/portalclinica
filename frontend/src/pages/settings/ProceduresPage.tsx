@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { plansApi, financialApi, contractTemplatesApi } from '../../services/api';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
+import { SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionMode = 'nao_gera' | 'unica' | 'multipla' | 'composta';
@@ -924,10 +925,7 @@ export function ProceduresPage() {
               {/* Table */}
               <div style={{ padding: '0 28px 28px' }}>
                 {isLoading ? (
-                  <div style={{ textAlign: 'center', padding: 48, color: '#71717A', fontSize: 14 }}>
-                    <i className="ti ti-loader-2" style={{ fontSize: 28, display: 'block', marginBottom: 10, color: '#A1A1AA' }} />
-                    Carregando procedimentos...
-                  </div>
+                  <SectionLoader label="Carregando procedimentos..." />
                 ) : (
                   <div style={{ background: '#FFFFFF', borderRadius: 14, border: '1px solid #E5E7EB', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>

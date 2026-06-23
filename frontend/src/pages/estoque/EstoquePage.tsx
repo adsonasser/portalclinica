@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
 import { inventoryApi } from '../../services/api';
+import { TableLoader, SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Product {
@@ -544,7 +545,7 @@ function ItensTab() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Carregando...</td></tr>
+              <TableLoader colSpan={8} />
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>
                 {products.length === 0 ? 'Nenhum produto cadastrado. Clique em "Novo produto" para começar.' : 'Nenhum produto encontrado.'}
@@ -689,7 +690,7 @@ function MovimentosTab() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Carregando...</td></tr>
+              <TableLoader colSpan={7} />
             ) : filtered.length === 0 ? (
               <tr><td colSpan={7} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Nenhum movimento no período.</td></tr>
             ) : filtered.map(m => {
@@ -810,7 +811,7 @@ function ValidadesTab() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Carregando...</td></tr>
+                <TableLoader colSpan={6} />
               ) : filtered.map(m => (
                 <tr key={m.id} style={{ borderBottom: '1px solid #F4F4F5' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#F9F9F9')}
@@ -923,7 +924,7 @@ function SugestaoTab() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Carregando...</td></tr>
+                <TableLoader colSpan={8} />
               ) : filtered.map(p => {
                 const sugestao = Math.max(1, Math.ceil(p.minStock * 2 - p.stock));
                 const badge    = stockBadge(p);
@@ -1029,7 +1030,7 @@ function ComprasTab() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Carregando...</td></tr>
+              <TableLoader colSpan={8} />
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} style={{ padding: '48px 16px', textAlign: 'center', color: '#A1A1AA', fontSize: 13 }}>Nenhuma entrada registrada no período.</td></tr>
             ) : filtered.map(m => (
@@ -1115,7 +1116,7 @@ function RelatoriosTab() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '48px 0', color: '#A1A1AA', fontSize: 13 }}>Carregando...</div>
+        <SectionLoader size="sm" />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           {/* Movimentações por tipo */}

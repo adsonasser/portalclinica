@@ -5,6 +5,7 @@ import { sessionsApi, agendaApi, prontuarioApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { TableActions } from '../../components/ui/TableActions';
 import { Portal } from '../../components/ui/Portal';
+import { SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type SessionStatus =
@@ -1064,12 +1065,7 @@ export function SessionsPage() {
 
       <div style={{ padding:'24px 28px', fontFamily:"'Inter', system-ui, sans-serif" }}>
 
-        {isLoading && (
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'80px 0', gap:10 }}>
-            <i className="ti ti-loader-2" style={{ fontSize:20, color:'#A1A1AA', animation:'spin 1s linear infinite' }} />
-            <span style={{ fontSize:13, color:'#71717A' }}>Carregando sessões...</span>
-          </div>
-        )}
+        {isLoading && <SectionLoader label="Carregando sessões..." />}
 
         {isError && (
           <div style={{ padding:'16px 20px', background:'#FEF2F2', borderRadius:12, border:'1px solid #FECACA', marginBottom:16 }}>

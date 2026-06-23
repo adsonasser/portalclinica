@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { contractsApi, contractTemplatesApi, patientsApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
+import { SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -833,11 +834,7 @@ export function ContratosPage() {
 
         {/* Table / Empty */}
         {isLoading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 0', flexDirection: 'column', gap: 10 }}>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            <div style={{ width: 28, height: 28, border: '3px solid #E4E4E7', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            <div style={{ fontSize: 13, color: '#71717A' }}>Carregando contratos...</div>
-          </div>
+          <SectionLoader label="Carregando contratos..." />
         ) : list.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
             <div style={{ textAlign: 'center', maxWidth: 380 }}>

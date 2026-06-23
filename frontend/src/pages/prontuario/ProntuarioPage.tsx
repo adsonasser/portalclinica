@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
+import { SectionLoader } from '../../components/ui/Loader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -578,17 +579,7 @@ export function ProntuarioPage() {
 
   const hasAlerts = patient && (patient.alergias || patient.medicamentos || patient.comorbidades || patient.alertaInterno);
 
-  if (isLoading) {
-    return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 36, height: 36, border: '3px solid #E4E4E7', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-          <div style={{ fontSize: 13, color: '#71717A' }}>Carregando prontuário...</div>
-        </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
+  if (isLoading) return <SectionLoader label="Carregando prontuário..." style={{ height: '100%' }} />;
 
   if (!patient) {
     return (

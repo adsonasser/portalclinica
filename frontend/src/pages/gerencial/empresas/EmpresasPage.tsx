@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from '../../../services/gerencialApi';
+import { Spinner } from '../../../components/ui/Loader';
 
 const STATUS_CFG: Record<string, { bg: string; color: string; label: string }> = {
   ATIVA:        { bg: 'rgba(22,163,74,.15)',  color: '#4ADE80', label: 'Ativa' },
@@ -124,8 +125,6 @@ export function EmpresasPage() {
 
   return (
     <>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-
       {showPanel && <NovaEmpresaPanel onClose={() => setShowPanel(false)} onSaved={() => {}} />}
 
       {/* Confirm dialog */}
@@ -176,9 +175,9 @@ export function EmpresasPage() {
         <div style={{ flex:1, minHeight:0, overflowY:'auto', padding:'0 28px 28px' }}>
           <div style={{ background:dark.surface, border:`1px solid ${dark.border}`, borderRadius:14, overflow:'hidden', marginTop:18, boxShadow:'0 4px 24px rgba(0,0,0,.2)' }}>
             {isLoading ? (
-              <div style={{ padding:'48px 0', textAlign:'center' }}>
-                <div style={{ width:24, height:24, border:'2px solid rgba(99,102,241,.2)', borderTopColor:'#818CF8', borderRadius:'50%', animation:'spin .8s linear infinite', margin:'0 auto 10px' }} />
-                <div style={{ fontSize:12, color:dark.muted }}>Carregando empresas...</div>
+              <div style={{ padding:'48px 0', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+                <Spinner size={22} color="#818CF8" />
+                <span style={{ fontSize:12, color:dark.muted }}>Carregando empresas...</span>
               </div>
             ) : (
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
