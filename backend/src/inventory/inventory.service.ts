@@ -50,6 +50,44 @@ export class InventoryService {
     });
   }
 
+  async findMovements(clinicId: string, query?: any) {
+    const where: any = { clinicId };
+    if (query?.type) where.type = query.type;
+    if (query?.productId) where.productId = query.productId;
+    return this.prisma.stockMovement.findMany({
+      where,
+      include: { product: { select: { name: true, unit: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  async findExpiryMovements(clinicId: string) {
+    return this.prisma.stockMovement.findMany({
+      where: { clinicId, type: 'ENTRADA', expiryDate: { not: null } },
+      include: { product: { select: { id: true, name: true, unit: true } } },
+      orderBy: { expiryDate: 'asc' },
+    });
+  }
+
+  async movementStats(clinicId: string, query?: any) {
+    const where: any = { clinicId };
+    if (query?.startDate) where.createdAt = { gte: new Date(query.startDate) };
+    if (query?.endDate) where.createdAt = { ...(where.createdAt || {}), lte: new Date(query.endDate) };
+    const movements = await this.prisma.stockMovement.findMany({ where, select: { type: true, quantity: true, unitCost: true } });
+    const byType: Record<string, { count: number; qty: number; value: number }> = {
+      ENTRADA: { count: 0, qty: 0, value: 0 },
+      SAIDA:   { count: 0, qty: 0, value: 0 },
+      AJUSTE:  { count: 0, qty: 0, value: 0 },
+      CONSUMO: { count: 0, qty: 0, value: 0 },
+    };
+    for (const m of movements) {
+      const t = byType[m.type];
+      if (t) { t.count++; t.qty += m.quantity; t.value += m.quantity * (m.unitCost || 0); }
+    }
+    return { total: movements.length, byType };
+  }
+
   async findCategories(clinicId: string) {
     return this.prisma.productCategory.findMany({ where: { clinicId }, orderBy: { name: 'asc' } });
   }

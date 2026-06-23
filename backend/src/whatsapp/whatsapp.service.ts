@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvolutionApiProvider } from './providers/evolution-api.provider';
-import { WhatsAppWebJsProvider } from './providers/whatsapp-web-js.provider';
+import { WhatsAppWebJsProvider, forceDestroyClient } from './providers/whatsapp-web-js.provider';
 import { IWhatsAppProvider } from './providers/whatsapp-provider.interface';
 
 export function normalizePhone(phone: string): string {
@@ -243,12 +243,20 @@ export class WhatsAppService {
     if (!number || number.length < 10) throw new BadRequestException('Número de telefone inválido');
 
     const provider = providers[integration.provider] ?? providers['evolution_api'];
-    const result = await provider.sendTextMessage(clinicId, integration, phone, text);
+
+    let result: any;
+    try {
+      result = await provider.sendTextMessage(clinicId, integration, phone, text);
+    } catch (err: any) {
+      // Ensure provider errors are always HttpExceptions (not raw 500s)
+      if (err?.status) throw err;
+      throw new BadRequestException(err?.message ?? 'Erro ao enviar mensagem via WhatsApp');
+    }
 
     await this.prisma.integration.updateMany({
       where: { clinicId, type: 'whatsapp', provider: integration.provider },
       data: { lastMessageAt: new Date() },
-    });
+    }).catch(() => { /* non-critical, don't fail the send */ });
 
     return result;
   }
@@ -276,6 +284,19 @@ export class WhatsAppService {
       return { ...cfg, clinicId: integration.clinicId, instanceName, provider: integration.provider };
     }
     return this.prisma.whatsAppConfig.findFirst({ where: { instanceName } });
+  }
+
+  async forceClear(clinicId: string) {
+    await forceDestroyClient(clinicId);
+    await this.prisma.integration.updateMany({
+      where: { clinicId, type: 'whatsapp', provider: 'whatsapp_web_js' },
+      data: { status: 'disconnected', lastDisconnectAt: new Date() },
+    });
+    await this.prisma.whatsAppConfig.updateMany({
+      where: { clinicId },
+      data: { connected: false },
+    });
+    return { success: true, message: 'Conexão limpa. Você pode reconectar agora.' };
   }
 
   // ─── Config listing for settings UI ────────────────────────────────────────

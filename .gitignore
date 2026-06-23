@@ -4,3 +4,8 @@ dist/
 *.env.local
 .DS_Store
 .vercel
+
+# WhatsApp Web JS sessions e cache (dados sensíveis, não versionar)
+backend/sessions/
+backend/.wwebjs_cache/
+backend/.wwebjs_auth/

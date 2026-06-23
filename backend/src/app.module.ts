@@ -26,6 +26,7 @@ import { ContactTypesModule } from './contact-types/contact-types.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
     WhatsAppModule,
     ConversationsModule,
     WebhooksModule,
+    QuickRepliesModule,
   ],
 })
 export class AppModule {}

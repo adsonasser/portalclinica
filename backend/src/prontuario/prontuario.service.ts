@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -32,12 +32,14 @@ export class ProntuarioService {
   async updateEvolution(clinicId: string, id: string, data: any) {
     const record = await this.prisma.evolutionNote.findFirst({ where: { id, clinicId } });
     if (!record) throw new NotFoundException('Evolução não encontrada');
+    if (record.status === 'finalized') throw new BadRequestException('Evolução finalizada não pode ser alterada. Crie um adendo se necessário.');
     return this.prisma.evolutionNote.update({ where: { id }, data });
   }
 
   async deleteEvolution(clinicId: string, id: string) {
     const record = await this.prisma.evolutionNote.findFirst({ where: { id, clinicId } });
     if (!record) throw new NotFoundException('Evolução não encontrada');
+    if (record.status === 'finalized') throw new BadRequestException('Evolução finalizada não pode ser excluída.');
     return this.prisma.evolutionNote.delete({ where: { id } });
   }
 

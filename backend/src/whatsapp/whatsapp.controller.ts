@@ -40,4 +40,9 @@ export class WhatsAppController {
   disconnect(@ClinicId() clinicId: string) {
     return this.whatsAppService.disconnect(clinicId);
   }
+
+  @Post('force-clear')
+  forceClear(@ClinicId() clinicId: string) {
+    return this.whatsAppService.forceClear(clinicId);
+  }
 }

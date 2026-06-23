@@ -26,8 +26,17 @@ export class InventoryController {
   @Delete('products/:id')
   deleteProduct(@ClinicId() clinicId: string, @Param('id') id: string) { return this.inventoryService.deleteProduct(clinicId, id); }
 
+  @Get('movements')
+  findMovements(@ClinicId() clinicId: string, @Query() query: any) { return this.inventoryService.findMovements(clinicId, query); }
+
   @Post('movements')
   createMovement(@ClinicId() clinicId: string, @Body() dto: any) { return this.inventoryService.createMovement(clinicId, dto); }
+
+  @Get('expiry')
+  findExpiryMovements(@ClinicId() clinicId: string) { return this.inventoryService.findExpiryMovements(clinicId); }
+
+  @Get('movement-stats')
+  movementStats(@ClinicId() clinicId: string, @Query() query: any) { return this.inventoryService.movementStats(clinicId, query); }
 
   @Get('categories')
   findCategories(@ClinicId() clinicId: string) { return this.inventoryService.findCategories(clinicId); }

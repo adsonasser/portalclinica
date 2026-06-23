@@ -54,11 +54,12 @@ const NAV: NavItem[] = [
     module: 'inventory',
     desc: 'Controle de insumos e produtos',
     subItems: [
-      { key: 'produtos',   icon: 'ti-package',           label: 'Itens do estoque',     desc: 'Cadastro e controle dos insumos/produtos',    path: '/estoque?tab=produtos' },
-      { key: 'movimentos', icon: 'ti-arrows-exchange',   label: 'Movimentações',        desc: 'Entradas, saídas, consumo e ajustes',         path: '/estoque?tab=movimentos' },
-      { key: 'validades',  icon: 'ti-calendar-check',    label: 'Validades',            desc: 'Acompanhamento de lotes e vencimentos',       path: '/estoque?tab=validades' },
-      { key: 'sugestao',   icon: 'ti-clipboard-list',    label: 'Sugestão de compras',  desc: 'Itens abaixo do estoque mínimo/ideal',        path: '/estoque?tab=sugestao' },
-      { key: 'relatorios', icon: 'ti-chart-bar',         label: 'Relatórios',           desc: 'Giro, consumo e posição de estoque',          path: '/estoque?tab=relatorios' },
+      { key: 'itens',      icon: 'ti-package',          label: 'Itens do estoque',    desc: 'Cadastro e controle de produtos/insumos',  path: '/estoque?tab=itens' },
+      { key: 'movimentos', icon: 'ti-arrows-exchange',   label: 'Movimentações',       desc: 'Entradas, saídas, consumo e ajustes',      path: '/estoque?tab=movimentos' },
+      { key: 'validades',  icon: 'ti-calendar-check',    label: 'Validades',           desc: 'Acompanhamento de lotes e vencimentos',    path: '/estoque?tab=validades' },
+      { key: 'sugestao',   icon: 'ti-clipboard-list',    label: 'Sugestão de compras', desc: 'Itens abaixo do estoque mínimo/ideal',     path: '/estoque?tab=sugestao' },
+      { key: 'compras',    icon: 'ti-truck-delivery',    label: 'Compras/Entradas',    desc: 'Registro e histórico de entradas',         path: '/estoque?tab=compras' },
+      { key: 'relatorios', icon: 'ti-chart-bar',         label: 'Relatórios',          desc: 'Giro, consumo e posição de estoque',       path: '/estoque?tab=relatorios' },
     ],
   },
   { key: 'messages',      icon: 'ti-message-2',         label: 'Mensagens',  path: '/messages',      module: 'messages' },
@@ -736,6 +737,13 @@ export function AppLayout() {
         {NAV.filter(item => isAdmin || canView(item.module)).map(navBtn)}
         <div style={{ flex: 1 }} />
         {(isAdmin || canView(SETTINGS.module)) && navBtn(SETTINGS)}
+        {/* Version badge */}
+        <div title={`v${__APP_VERSION__} · ${__GIT_HASH__} · ${__BUILD_DATE__}`}
+          style={{ fontSize: 9, color: 'rgba(0,0,0,0.25)', letterSpacing: '.03em',
+            fontWeight: 600, marginTop: 4, cursor: 'default', userSelect: 'none',
+            fontFamily: 'monospace' }}>
+          {__GIT_HASH__}
+        </div>
       </nav>
 
       {/* ── Content area ── */}

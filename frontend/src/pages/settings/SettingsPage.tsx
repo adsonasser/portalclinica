@@ -2162,6 +2162,7 @@ export function SettingsPage() {
         @keyframes slideInRight { from { opacity:0; transform:translateX(32px); } to { opacity:1; transform:translateX(0); } }
         @keyframes slideIn { from { opacity:0; transform:translateX(30px); } to { opacity:1; transform:translateX(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes progress45s { from { width: 0% } to { width: 100% } }
         .s-nav-item:hover { background: #F4F4F5 !important; }
         .rte-btn { width: 28px; height: 28px; border: none; background: transparent; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #374151; }
         .rte-btn:hover { background: #E4E4E7; }
@@ -2271,13 +2272,17 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
 
   const cfg = integrations?.find((i: any) => i.provider === activeProvider) ?? null;
 
-  const { data: status, refetch: refetchStatus } = useQuery({
+  const { data: status, refetch: refetchStatus, isFetching: isStatusFetching } = useQuery({
     queryKey: ['wp-status', activeProvider],
     queryFn: () => whatsAppApi.getStatus(),
-    enabled: !!cfg && activeProvider !== 'whatsapp_cloud_api',
+    enabled: activeProvider !== 'whatsapp_cloud_api',
     retry: false,
-    refetchInterval: cfg ? 10000 : false,
+    refetchInterval: 10000,
   });
+
+  const handleRefreshStatus = async () => {
+    await Promise.all([refetchIntegrations(), refetchStatus()]);
+  };
 
   // Evolution API fields
   const [baseUrl,      setBaseUrl]      = useState('');
@@ -2328,14 +2333,26 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
     } finally { setSaving(false); }
   };
 
+  const [qrStep, setQrStep] = useState<'idle' | 'starting' | 'waiting_qr' | 'done' | 'error'>('idle');
+  const [qrError, setQrError] = useState('');
+  const [clearing, setClearing] = useState(false);
+
   const handleQrCode = async () => {
-    setQrLoading(true); setQrData(null);
+    setQrLoading(true); setQrData(null); setQrStep('starting'); setQrError('');
+    // After 5s bump to "waiting_qr" to show user Chrome is opening
+    const stepTimer = setTimeout(() => setQrStep('waiting_qr'), 5000);
     try {
       const result = await whatsAppApi.generateQrCode();
+      clearTimeout(stepTimer);
       setQrData(result);
+      setQrStep('done');
       setTimeout(() => refetchStatus(), 3000);
     } catch (err: any) {
-      toast(err?.response?.data?.message || 'Erro ao gerar QR Code', 'error');
+      clearTimeout(stepTimer);
+      const msg = err?.response?.data?.message || 'Erro ao gerar QR Code';
+      setQrError(msg);
+      setQrStep('error');
+      toast(msg, 'error');
     } finally { setQrLoading(false); }
   };
 
@@ -2344,10 +2361,24 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
       await whatsAppApi.disconnect();
       refetchIntegrations();
       qc.invalidateQueries({ queryKey: ['wp-status', activeProvider] });
+      setQrData(null); setQrStep('idle');
       toast('WhatsApp desconectado', 'success');
     } catch (err: any) {
       toast(err?.response?.data?.message || 'Erro ao desconectar', 'error');
     }
+  };
+
+  const handleForceClear = async () => {
+    setClearing(true);
+    try {
+      await whatsAppApi.forceClear();
+      refetchIntegrations();
+      qc.invalidateQueries({ queryKey: ['wp-status', activeProvider] });
+      setQrData(null); setQrStep('idle'); setQrError('');
+      toast('Conexão limpa. Você pode reconectar agora.', 'success');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || 'Erro ao limpar conexão', 'error');
+    } finally { setClearing(false); }
   };
 
   const isConnected = status?.connected === true;
@@ -2426,8 +2457,8 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
                         Desconectar
                       </button>
                     )}
-                    <button onClick={() => refetchStatus()} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <i className="ti ti-refresh" style={{ fontSize: 12 }} />
+                    <button onClick={handleRefreshStatus} disabled={isStatusFetching} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit', opacity: isStatusFetching ? 0.6 : 1 }}>
+                      <i className={`ti ${isStatusFetching ? 'ti-loader-2' : 'ti-refresh'}`} style={{ fontSize: 12, animation: isStatusFetching ? 'spin 1s linear infinite' : 'none' }} />
                     </button>
                   </div>
                 )}
@@ -2505,8 +2536,8 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
                         Desconectar
                       </button>
                     )}
-                    <button onClick={() => refetchStatus()} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <i className="ti ti-refresh" style={{ fontSize: 12 }} />
+                    <button onClick={handleRefreshStatus} disabled={isStatusFetching} style={{ height: 28, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit', opacity: isStatusFetching ? 0.6 : 1 }}>
+                      <i className={`ti ${isStatusFetching ? 'ti-loader-2' : 'ti-refresh'}`} style={{ fontSize: 12, animation: isStatusFetching ? 'spin 1s linear infinite' : 'none' }} />
                     </button>
                   </div>
                 )}
@@ -2530,28 +2561,74 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
 
-                {/* QR Code area — shown after saving */}
+                {/* QR Code area */}
                 {cfg && !isConnected && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.06em' }}>Conectar via QR Code</div>
-                    <div style={{ background: '#F8F9FA', border: '1px solid #E4E4E7', borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                      {qrData?.qrcode ? (
-                        <>
-                          <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8 }} />
-                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
-                            Abra o WhatsApp → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie.
-                          </div>
-                          <div style={{ fontSize: 11, color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <i className="ti ti-refresh" style={{ fontSize: 11 }} />
-                            Aguardando autenticação...
-                          </div>
-                        </>
-                      ) : (
+                    <div style={{ background: '#F8F9FA', border: `1px solid ${qrStep === 'error' ? '#FECACA' : '#E4E4E7'}`, borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+
+                      {/* Idle */}
+                      {qrStep === 'idle' && !qrData?.qrcode && (
                         <>
                           <div style={{ width: 64, height: 64, borderRadius: 12, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <i className="ti ti-qrcode" style={{ fontSize: 28, color: '#16A34A' }} />
                           </div>
                           <div style={{ fontSize: 13, color: '#71717A', textAlign: 'center' }}>Clique em "Conectar WhatsApp" para gerar o QR Code</div>
+                        </>
+                      )}
+
+                      {/* Starting Chrome */}
+                      {qrStep === 'starting' && (
+                        <>
+                          <div style={{ width: 64, height: 64, borderRadius: 12, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-loader-2" style={{ fontSize: 28, color: '#2563EB', animation: 'spin 1s linear infinite' }} />
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#1D4ED8' }}>Iniciando Chrome...</div>
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center' }}>Abrindo o navegador em segundo plano. Pode levar até 10 segundos.</div>
+                        </>
+                      )}
+
+                      {/* Waiting for QR */}
+                      {qrStep === 'waiting_qr' && (
+                        <>
+                          <div style={{ width: 64, height: 64, borderRadius: 12, background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-loader-2" style={{ fontSize: 28, color: '#D97706', animation: 'spin 1s linear infinite' }} />
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#92400E' }}>Carregando WhatsApp Web...</div>
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
+                            Aguarde enquanto a sessão é iniciada.<br />O QR Code aparecerá em instantes (máx. 45s).
+                          </div>
+                          <div style={{ width: '100%', height: 4, background: '#E4E4E7', borderRadius: 99, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', background: '#D97706', borderRadius: 99, animation: 'progress45s 45s linear forwards' }} />
+                          </div>
+                        </>
+                      )}
+
+                      {/* QR Ready */}
+                      {qrData?.qrcode && (
+                        <>
+                          <img src={qrData.qrcode} alt="QR Code WhatsApp" style={{ width: 200, height: 200, borderRadius: 8, border: '4px solid #000' }} />
+                          <div style={{ fontSize: 12, color: '#374151', textAlign: 'center', lineHeight: 1.6 }}>
+                            Abra o WhatsApp → <strong>Dispositivos conectados</strong> → <strong>Conectar dispositivo</strong> → escaneie.
+                          </div>
+                          <div style={{ fontSize: 11, color: '#A1A1AA', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <i className="ti ti-loader-2" style={{ fontSize: 11, animation: 'spin 1s linear infinite' }} />
+                            Aguardando escaneamento...
+                          </div>
+                        </>
+                      )}
+
+                      {/* Error */}
+                      {qrStep === 'error' && (
+                        <>
+                          <div style={{ width: 64, height: 64, borderRadius: 12, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-alert-circle" style={{ fontSize: 28, color: '#DC2626' }} />
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#DC2626' }}>Falha na conexão</div>
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>{qrError}</div>
+                          <div style={{ fontSize: 12, color: '#71717A', textAlign: 'center', lineHeight: 1.6 }}>
+                            Se o erro persistir, use <strong>"Limpar conexão"</strong> abaixo e tente novamente.
+                          </div>
                         </>
                       )}
                     </div>
@@ -2577,7 +2654,7 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
 
           {/* Footer */}
           {activeProvider !== 'whatsapp_cloud_api' && (
-            <div style={{ flexShrink: 0, borderTop: '1px solid #E4E4E7', padding: '16px 24px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flexShrink: 0, borderTop: '1px solid #E4E4E7', padding: '16px 24px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <button onClick={handleSave} disabled={saving}
                 style={{ height: 38, padding: '0 18px', background: '#000000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
                 {saving ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-device-floppy" style={{ fontSize: 14 }} />}
@@ -2587,7 +2664,16 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
                 <button onClick={handleQrCode} disabled={qrLoading}
                   style={{ height: 38, padding: '0 16px', background: '#FFFFFF', border: '1px solid #16A34A', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#16A34A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: qrLoading ? 0.7 : 1 }}>
                   {qrLoading ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-qrcode" style={{ fontSize: 14 }} />}
-                  {activeProvider === 'whatsapp_web_js' ? 'Conectar WhatsApp' : 'Gerar QR Code'}
+                  {qrLoading
+                    ? (qrStep === 'starting' ? 'Iniciando Chrome...' : 'Carregando WhatsApp...')
+                    : (activeProvider === 'whatsapp_web_js' ? 'Conectar WhatsApp' : 'Gerar QR Code')}
+                </button>
+              )}
+              {activeProvider === 'whatsapp_web_js' && (
+                <button onClick={handleForceClear} disabled={clearing}
+                  style={{ height: 38, padding: '0 14px', background: '#FFFFFF', border: '1px solid #FECACA', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#DC2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', opacity: clearing ? 0.7 : 1, marginLeft: 'auto' }}>
+                  {clearing ? <i className="ti ti-loader-2" style={{ fontSize: 14, animation: 'spin 1s linear infinite' }} /> : <i className="ti ti-plug-x" style={{ fontSize: 14 }} />}
+                  {clearing ? 'Limpando...' : 'Limpar conexão'}
                 </button>
               )}
             </div>

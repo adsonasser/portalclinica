@@ -1835,7 +1835,7 @@ function VendasTab({ sales }: { sales: Sale[] }) {
   const [receberSale,   setReceberSale]   = useState<Sale | null>(null);
   const [detailSale,    setDetailSale]    = useState<Sale | null>(null);
   const [cancelSale,    setCancelSale]    = useState<Sale | null>(null);
-  const [period,        setPeriod]        = useState<PeriodKey>('all_time');
+  const [period,        setPeriod]        = useState<PeriodKey>('this_month');
   const [customStart,   setCustomStart]   = useState('');
   const [customEnd,     setCustomEnd]     = useState('');
 

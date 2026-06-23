@@ -202,6 +202,7 @@ model Clinic {
   integrations        Integration[]
   conversations       Conversation[]
   chatMessages        ChatMessage[]
+  quickReplies        QuickReply[]
 
   @@map("clinics")
 }
@@ -853,6 +854,8 @@ model StockMovement {
   unitCost    Float?
   reason      String?
   reference   String?
+  batch       String?
+  expiryDate  DateTime?
   createdAt   DateTime          @default(now())
 
   clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
@@ -1135,7 +1138,9 @@ model Integration {
 model Conversation {
   id                 String    @id @default(cuid())
   clinicId           String
-  contactId          String
+  contactId          String?
+  guestPhone         String?
+  guestName          String?
   channel            String    @default("whatsapp")
   provider           String    @default("evolution_api")
   externalChatId     String?
@@ -1144,15 +1149,34 @@ model Conversation {
   lastMessagePreview String?
   unreadCount        Int       @default(0)
   assignedUserId     String?
+  closedAt           DateTime?
+  closedByUserId     String?
+  closeReason        String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   clinic       Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  contact      Patient       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact      Patient?      @relation(fields: [contactId], references: [id], onDelete: Cascade)
   chatMessages ChatMessage[]
 
-  @@unique([clinicId, contactId, channel, provider])
   @@map("conversations")
+}
+
+model QuickReply {
+  id              String   @id @default(cuid())
+  clinicId        String
+  title           String
+  shortcut        String?
+  content         String
+  category        String?
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("quick_replies")
 }
 
 model ChatMessage {

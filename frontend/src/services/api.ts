@@ -171,6 +171,11 @@ export const inventoryApi = {
   updateProduct: (id: string, data: any) =>
     api.patch(`/inventory/products/${id}`, data).then((r) => r.data),
   deleteProduct: (id: string) => api.delete(`/inventory/products/${id}`).then((r) => r.data),
+  movements: (params?: Record<string, string>) =>
+    api.get('/inventory/movements', { params }).then((r) => r.data),
+  expiryMovements: () => api.get('/inventory/expiry').then((r) => r.data),
+  movementStats: (params?: Record<string, string>) =>
+    api.get('/inventory/movement-stats', { params }).then((r) => r.data),
   createMovement: (data: any) => api.post('/inventory/movements', data).then((r) => r.data),
   categories: () => api.get('/inventory/categories').then((r) => r.data),
   createCategory: (data: any) => api.post('/inventory/categories', data).then((r) => r.data),
@@ -309,15 +314,24 @@ export const whatsAppApi = {
   generateQrCode: () => api.post('/integrations/whatsapp/qrcode').then((r) => r.data),
   getStatus: () => api.get('/integrations/whatsapp/status').then((r) => r.data),
   disconnect: () => api.post('/integrations/whatsapp/disconnect').then((r) => r.data),
+  forceClear: () => api.post('/integrations/whatsapp/force-clear').then((r) => r.data),
 };
 
 // ─── Conversations ────────────────────────────────────────────────────────────
 
 export const conversationsApi = {
-  list: () => api.get('/conversations').then((r) => r.data),
+  list: (status?: string) => api.get('/conversations', { params: status ? { status } : {} }).then((r) => r.data),
   messages: (id: string) => api.get(`/conversations/${id}/messages`).then((r) => r.data),
   open: (contactId: string) => api.post('/conversations/open', { contactId }).then((r) => r.data),
+  close: (id: string, reason?: string) => api.post(`/conversations/${id}/close`, { reason }).then((r) => r.data),
   send: (id: string, content: string) => api.post(`/conversations/${id}/send`, { content }).then((r) => r.data),
+};
+
+export const quickRepliesApi = {
+  list: (activeOnly?: boolean) => api.get('/quick-replies', { params: activeOnly ? { active: 'true' } : {} }).then((r) => r.data),
+  create: (data: any) => api.post('/quick-replies', data).then((r) => r.data),
+  update: (id: string, data: any) => api.patch(`/quick-replies/${id}`, data).then((r) => r.data),
+  remove: (id: string) => api.delete(`/quick-replies/${id}`).then((r) => r.data),
 };
 
 // ─── Global Search ────────────────────────────────────────────────────────────

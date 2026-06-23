@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ClinicId, CurrentUser } from '../common/decorators/clinic.decorator';
@@ -9,8 +9,8 @@ export class ConversationsController {
   constructor(private readonly conversationsService: ConversationsService) {}
 
   @Get()
-  findAll(@ClinicId() clinicId: string) {
-    return this.conversationsService.findAll(clinicId);
+  findAll(@ClinicId() clinicId: string, @Query('status') status?: string) {
+    return this.conversationsService.findAll(clinicId, status);
   }
 
   @Get(':id/messages')
@@ -21,6 +21,16 @@ export class ConversationsController {
   @Post('open')
   openConversation(@ClinicId() clinicId: string, @Body() dto: { contactId: string }) {
     return this.conversationsService.openConversation(clinicId, dto.contactId);
+  }
+
+  @Post(':id/close')
+  closeConversation(
+    @ClinicId() clinicId: string,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: { reason?: string },
+  ) {
+    return this.conversationsService.closeConversation(clinicId, id, user.id, dto.reason);
   }
 
   @Post(':id/send')

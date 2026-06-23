@@ -1069,7 +1069,7 @@ export function ProntuarioPage() {
                 )}
               </div>
               <div style={{ flexShrink: 0, padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                {isEvolution && (
+                {isEvolution && item.status !== 'finalizado' && (
                   <button onClick={() => { if (editorRef.current && item.fullContent) { editorRef.current.innerHTML = item.fullContent; editorRef.current.focus(); } setHistoryItem(null); }}
                     style={{ height: 34, padding: '0 14px', background: '#F4F4F5', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <i className="ti ti-pencil" style={{ fontSize: 13 }} /> Continuar edição
@@ -1288,10 +1288,10 @@ export function ProntuarioPage() {
       {receituarioOpen && (
       <Portal>
         {/* Backdrop — prontuário fica visível e desfocado por trás */}
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', zIndex: 899, animation: 'fadeIn .2s ease' }} />
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', zIndex: 10002, animation: 'fadeIn .2s ease' }} />
 
         {/* Receituário — modal em camada */}
-        <div style={{ position: 'fixed', inset: '12px', borderRadius: 20, background: '#F8F9FA', zIndex: 900, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.4)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'fadeIn .18s ease' }}>
+        <div style={{ position: 'fixed', inset: '12px', borderRadius: 20, background: '#F8F9FA', zIndex: 10003, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 24px 80px rgba(0,0,0,0.4)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'fadeIn .18s ease' }}>
 
           {/* Header */}
           <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E4E4E7', padding: '14px 24px', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -1416,8 +1416,8 @@ export function ProntuarioPage() {
             {/* ── Print params panel (Portal separado — camada 3) ── */}
             {printParamsOpen && (
               <Portal>
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 949, animation: 'fadeIn .15s ease' }} />
-                <div style={{ position: 'fixed', inset: '28px', borderRadius: 20, background: '#FFFFFF', zIndex: 950, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideInRight .2s ease' }}>
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 10004, animation: 'fadeIn .15s ease' }} />
+                <div style={{ position: 'fixed', inset: '28px', borderRadius: 20, background: '#FFFFFF', zIndex: 10005, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideInRight .2s ease' }}>
                 <div style={{ flexShrink: 0, padding: '14px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', gap: 12 }}>
                   <button onClick={() => setPrintParamsOpen(false)}
                     style={{ width: 30, height: 30, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A', flexShrink: 0 }}>
@@ -1563,8 +1563,8 @@ export function ProntuarioPage() {
 
               return (
                 <Portal>
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 959, animation: 'fadeIn .15s ease' }} />
-                <div style={{ position: 'fixed', inset: '16px', borderRadius: 20, background: '#EAECEF', zIndex: 960, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'fadeIn .18s ease' }}>
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 10006, animation: 'fadeIn .15s ease' }} />
+                <div style={{ position: 'fixed', inset: '16px', borderRadius: 20, background: '#EAECEF', zIndex: 10007, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'fadeIn .18s ease' }}>
                   {/* Preview topbar */}
                   <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E4E4E7', padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <button onClick={() => { setPrintPreviewOpen(false); setPrintParamsOpen(true); }}
@@ -1825,7 +1825,7 @@ export function ProntuarioPage() {
 
         {/* "Salvar como modelo" — prompt de nome */}
         {saveAsModelOpen && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 970, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10008, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', system-ui, sans-serif" }}>
             <div style={{ background: '#FFFFFF', borderRadius: 16, width: 420, padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid #E4E4E7' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1882,7 +1882,7 @@ export function ProntuarioPage() {
 
         {/* Confirm close — camada 5, acima de tudo */}
         {receituarioCloseConfirm && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 970, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10008, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter', system-ui, sans-serif" }}>
             <div style={{ background: '#FFFFFF', borderRadius: 16, width: 380, padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', border: '1px solid #E4E4E7' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
