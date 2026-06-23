@@ -590,9 +590,9 @@ export function AppLayout() {
             <button
               onClick={e => { e.stopPropagation(); setQuickNewOpen(o => !o); }}
               style={{
-                height: 32, padding: '0 12px',
+                height: 32, padding: '0 14px',
                 background: quickNewOpen ? '#27272A' : '#09090B',
-                border: 'none', borderRadius: 8,
+                border: 'none', borderRadius: 20,
                 fontSize: 12, fontWeight: 600, color: '#FFFFFF',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
                 fontFamily: 'inherit', transition: 'background 0.15s',
