@@ -1118,8 +1118,8 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const [fErr, setFErr] = useState('');
   const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: usersApi.list });
   const { data: profiles = [] } = useQuery({ queryKey: ['access-profiles'], queryFn: accessProfilesApi.list });
-  const createMut = useMutation({ mutationFn: (d: any) => usersApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
-  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
+  const createMut = useMutation({ mutationFn: (d: any) => usersApi.create(d), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['agenda-professionals'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
+  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['agenda-professionals'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
   const removeMut = useMutation({ mutationFn: (id: string) => usersApi.remove(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setDeleteConfirm(null); } });
 
   function openNew() { setEditItem(null); setFName(''); setFEmail(''); setFPass(''); setFRole('PROFESSIONAL'); setFProfileId(''); setFIsProfessional(false); setFShowInAgenda(true); setFErr(''); setShowForm(true); }

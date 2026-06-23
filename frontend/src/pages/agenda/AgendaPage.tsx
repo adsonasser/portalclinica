@@ -888,7 +888,7 @@ export function AgendaPage() {
   const { data: profsData } = useQuery({
     queryKey: ['agenda-professionals'],
     queryFn:  agendaApi.professionals,
-    staleTime: 5 * 60_000,
+    staleTime: 60_000,
   });
 
   // ── Fetch appointment types for toolbar filter ────────────────────────────
