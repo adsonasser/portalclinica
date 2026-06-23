@@ -80,13 +80,6 @@ function getGreeting(hour: number): string {
   return 'Boa noite';
 }
 
-function formatDate(d: Date): string {
-  const weekday = DAYS_PT[d.getDay()];
-  const day     = String(d.getDate()).padStart(2, '0');
-  const month   = MONTHS_PT[d.getMonth()];
-  const year    = d.getFullYear();
-  return `${weekday}, ${day} de ${month} de ${year}`;
-}
 
 function formatDateShort(d: Date): string {
   const day   = String(d.getDate()).padStart(2, '0');
@@ -209,7 +202,6 @@ export function AppLayout() {
   const hour        = now.getHours();
   const greeting    = getGreeting(hour);
   const firstName   = user?.name?.split(' ')[0] ?? null;
-  const dateStr     = formatDate(now);
   const dateShort   = formatDateShort(now);
   const dateLineStr = formatDateLine(now);
 

@@ -29,6 +29,7 @@ const HISTORY_STATUS: Record<string, { label: string; bg: string; color: string 
 
 const DOC_FILTER_TYPES = ['Todos', 'Evolução', 'Prescrição', 'Receita', 'Exames', 'Atestado', 'Declaração', 'Orientação', 'Termo', 'Outros'];
 const RECEITUARIO_FILTER = ['Todos', 'Receita', 'Atestado', 'Declaração', 'Orientações', 'Exames', 'Outros'];
+void RECEITUARIO_FILTER;
 
 const DEFAULT_PRINT_PARAMS = {
   layout: 'padrao' as 'padrao' | 'sem_cabecalho',
@@ -316,7 +317,7 @@ export function ProntuarioPage() {
 
   const createTemplateMut = useMutation({
     mutationFn: (data: any) => prontuarioApi.createDocTemplate(data),
-    onSuccess: (created, vars) => {
+    onSuccess: (_created, vars) => {
       qc.invalidateQueries({ queryKey: ['doc-templates'] });
       qc.invalidateQueries({ queryKey: ['receituario-templates'] });
       qc.invalidateQueries({ queryKey: ['doc-templates-all'] });
