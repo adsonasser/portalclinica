@@ -93,6 +93,7 @@ export type IncomingMessageHandler = (
   body: string,
   timestamp: Date,
   messageId: string,
+  chatId: string,       // real WhatsApp chat JID (e.g. "5571...@c.us") — use this for sending
 ) => void | Promise<void>;
 
 let onIncomingMessage: IncomingMessageHandler | null = null;
@@ -223,12 +224,14 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
       try {
         // Strip any @suffix to get raw number (handles @c.us, @lid, @s.whatsapp.net)
         let phone = from.replace(/@[^@]+$/, '');
+        let chatId = from;   // real WhatsApp chat JID — updated below
         let senderName = '';
 
         // Prefer chat.id when it's a proper @c.us JID (real phone).
         // Do NOT use chat.id when it ends @lid — that's still a LID, not a phone.
         try {
           const chat = await msg.getChat();
+          if (chat?.id?._serialized) chatId = chat.id._serialized;
           if (chat?.id?.user && chat.id._serialized?.endsWith('@c.us')) {
             phone = chat.id.user;
           }
@@ -239,6 +242,7 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
           const contact = await msg.getContact();
           if (contact?.id?._serialized?.endsWith('@c.us') && contact.id.user) {
             phone = contact.id.user;
+            chatId = contact.id._serialized;
           }
           senderName = contact?.pushname || contact?.name || '';
         } catch { /* keep empty */ }
@@ -256,6 +260,7 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
           msg.body,
           new Date((msg.timestamp ?? Date.now() / 1000) * 1000),
           msg.id?.id ?? String(Date.now()),
+          chatId,
         );
       } catch (err) {
         this.logger.error(`[${clinicId}] Erro ao processar mensagem recebida: ${err}`);
@@ -375,6 +380,7 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
     _integration: any,
     phone: string,
     text: string,
+    chatId?: string,
   ): Promise<SendResult> {
     this.assertAvailable();
 
@@ -385,16 +391,24 @@ export class WhatsAppWebJsProvider implements IWhatsAppProvider {
       );
     }
 
-    const normalized = normalizePhone(phone);
-    if (!normalized || normalized.length < 10) {
-      throw new BadRequestException('Número de telefone inválido.');
-    }
-
     try {
-      // Resolve the correct WhatsApp ID (avoids LID protocol errors in multi-device)
+      // If we have the real WhatsApp chat JID (stored from incoming message), use it directly.
+      // This bypasses getNumberId and works even for multi-device @lid senders.
+      if (chatId && chatId.includes('@')) {
+        const result = await state.client.sendMessage(chatId, text);
+        return { messageId: result?.id?.id ?? String(Date.now()), status: 'sent' };
+      }
+
+      // Fallback: resolve the WhatsApp JID from phone number via server lookup
+      const normalized = normalizePhone(phone);
+      if (!normalized || normalized.length < 10) {
+        throw new BadRequestException('Número de telefone inválido.');
+      }
       const numberId = await state.client.getNumberId(normalized);
       if (!numberId) {
-        throw new BadRequestException(`Número ${phone} não encontrado no WhatsApp.`);
+        throw new BadRequestException(
+          `Número ${phone} não encontrado no WhatsApp. Verifique se o contato usa WhatsApp.`,
+        );
       }
       const result = await state.client.sendMessage(numberId._serialized, text);
       return {

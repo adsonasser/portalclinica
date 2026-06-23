@@ -66,7 +66,7 @@ export class EvolutionApiProvider implements IWhatsAppProvider {
     } catch { /* ignore */ }
   }
 
-  async sendTextMessage(_clinicId: string, integration: any, phone: string, text: string): Promise<SendResult> {
+  async sendTextMessage(_clinicId: string, integration: any, phone: string, text: string, _chatId?: string): Promise<SendResult> {
     const { baseUrl, apiKey, instanceName } = this.getConfig(integration);
     const number = normalizePhone(phone);
     if (!number || number.length < 10) throw new BadRequestException('Número de telefone inválido');

@@ -13,7 +13,7 @@ export class ConversationsService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    setWhatsAppWebJsMessageHandler(async (clinicId, from, senderName, body, timestamp, messageId) => {
+    setWhatsAppWebJsMessageHandler(async (clinicId, from, senderName, body, timestamp, messageId, chatId) => {
       try {
         await this.receiveMessage(clinicId, {
           providerMessageId: messageId,
@@ -22,6 +22,7 @@ export class ConversationsService implements OnModuleInit {
           content: body,
           receivedAt: timestamp,
           instanceName: '',
+          chatId,
         });
       } catch (err) {
         this.logger.error(`[${clinicId}] Erro ao salvar mensagem recebida: ${err}`);
@@ -123,7 +124,7 @@ export class ConversationsService implements OnModuleInit {
     if (!conv) throw new NotFoundException('Conversa não encontrada');
 
     const phone = conv.contact?.phone ?? conv.guestPhone;
-    if (!phone) throw new BadRequestException('Contato sem telefone');
+    if (!phone && !conv.externalChatId) throw new BadRequestException('Contato sem telefone');
 
     if (conv.status === 'closed') {
       await this.prisma.conversation.update({
@@ -134,7 +135,7 @@ export class ConversationsService implements OnModuleInit {
 
     let providerMessageId: string | null = null;
     try {
-      const result: any = await this.whatsApp.sendTextMessage(clinicId, phone, content.trim());
+      const result: any = await this.whatsApp.sendTextMessage(clinicId, phone ?? '', content.trim(), conv.externalChatId ?? undefined);
       providerMessageId = result?.key?.id || result?.messageId || null;
     } catch (err: any) {
       await this.prisma.chatMessage.create({
@@ -172,6 +173,7 @@ export class ConversationsService implements OnModuleInit {
     content: string;
     receivedAt: Date;
     instanceName: string;
+    chatId?: string;
   }) {
     // Drop group messages (safety net — provider should already filter)
     if (data.senderPhone.includes('@g.us') || data.senderPhone.includes('-')) return null;
@@ -183,7 +185,8 @@ export class ConversationsService implements OnModuleInit {
     if (existing) return existing;
 
     const normalizedPhone = normalizePhone(data.senderPhone);
-    const externalChatId = `${normalizedPhone}@s.whatsapp.net`;
+    // Prefer the real WhatsApp chat JID passed by the provider; fall back to computed value
+    const externalChatId = data.chatId ?? `${normalizedPhone}@s.whatsapp.net`;
 
     // Try to find a registered patient by phone (last 10 digits)
     const phoneSuffix = normalizedPhone.slice(-10);

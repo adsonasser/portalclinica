@@ -20,5 +20,5 @@ export interface IWhatsAppProvider {
   connect(clinicId: string, integration: any): Promise<QrCodeResult>;
   getConnectionStatus(clinicId: string, integration: any): Promise<StatusResult>;
   disconnect(clinicId: string, integration: any): Promise<void>;
-  sendTextMessage(clinicId: string, integration: any, phone: string, text: string): Promise<SendResult>;
+  sendTextMessage(clinicId: string, integration: any, phone: string, text: string, chatId?: string): Promise<SendResult>;
 }

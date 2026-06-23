@@ -29,8 +29,14 @@ interface Patient { id: string; name: string; phone: string | null; cpf?: string
 function convName(c: Conversation) {
   return c.contact?.name || c.guestName || c.guestPhone || 'Desconhecido';
 }
+function looksLikeLid(p: string) {
+  // LIDs são 14-15 dígitos que não começam com código de país real
+  // Nros brasileiros: 12-13 dígitos começando com 55
+  return /^\d{14,}$/.test(p) && !p.startsWith('55');
+}
 function convPhone(c: Conversation) {
-  return c.contact?.phone || c.guestPhone || '';
+  const p = c.contact?.phone || c.guestPhone || '';
+  return looksLikeLid(p) ? '' : p;
 }
 function convIsGuest(c: Conversation) {
   return !c.contactId;
@@ -680,7 +686,11 @@ export function MessagesPage() {
                     </div>
                     <div style={{ fontSize:11, color:'#71717A', display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
                       <i className="ti ti-brand-whatsapp" style={{ fontSize:11, color:'#16A34A' }} />
-                      {convPhone(selected) && <span>{convPhone(selected)}</span>}
+                      {convPhone(selected)
+                        ? <span>{convPhone(selected)}</span>
+                        : looksLikeLid(selected.contact?.phone || selected.guestPhone || '')
+                          ? <span style={{ color:'#D97706' }}>Número não identificado</span>
+                          : null}
                       <span style={{ color:'#E4E4E7' }}>·</span>
                       <span style={{ fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:99,
                         background: selected.status === 'open' ? '#DCFCE7' : '#F4F4F5',

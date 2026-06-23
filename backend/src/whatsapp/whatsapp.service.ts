@@ -218,7 +218,7 @@ export class WhatsAppService {
     return { success: true };
   }
 
-  async sendTextMessage(clinicId: string, phone: string, text: string) {
+  async sendTextMessage(clinicId: string, phone: string, text: string, chatId?: string) {
     let integration: any;
     try {
       integration = await this._resolveIntegration(clinicId);
@@ -246,7 +246,7 @@ export class WhatsAppService {
 
     let result: any;
     try {
-      result = await provider.sendTextMessage(clinicId, integration, phone, text);
+      result = await provider.sendTextMessage(clinicId, integration, phone, text, chatId);
     } catch (err: any) {
       // Ensure provider errors are always HttpExceptions (not raw 500s)
       if (err?.status) throw err;
