@@ -783,26 +783,8 @@ export function ContratosPage() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FAFAFA', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
-      {/* Header */}
-      <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E4E4E7', padding: '18px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#09090B', letterSpacing: '-0.3px', margin: 0 }}>Contratos</h1>
-          <p style={{ fontSize: 13, color: '#71717A', margin: '2px 0 0' }}>Gerencie contratos de pacientes, vendas e serviços</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => navigate('/settings?section=contratos')}
-            style={{ height: 36, padding: '0 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <i className="ti ti-settings" style={{ fontSize: 13 }} /> Modelos
-          </button>
-          <button onClick={() => setNewDrawerOpen(true)}
-            style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo contrato
-          </button>
-        </div>
-      </div>
-
       {/* Body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 40px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
@@ -812,9 +794,9 @@ export function ContratosPage() {
           <KpiCard label="Assinados"          value={counts.assinado}               icon="ti-circle-check" iconBg="#DCFCE7" iconColor="#16A34A" />
         </div>
 
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, padding: '0 12px', height: 36, flex: 1, maxWidth: 380 }}>
+        {/* Toolbar: pesquisa + status + botões */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, padding: '0 12px', height: 36, flex: 1, maxWidth: 340 }}>
             <i className="ti ti-search" style={{ fontSize: 14, color: '#A1A1AA' }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por paciente ou título..."
               style={{ border: 'none', background: 'transparent', fontSize: 13, outline: 'none', width: '100%', color: '#09090B', fontFamily: 'inherit' }} />
@@ -830,6 +812,15 @@ export function ContratosPage() {
               <i className="ti ti-x" style={{ fontSize: 12 }} /> Limpar
             </button>
           )}
+          <div style={{ flex: 1 }} />
+          <button onClick={() => navigate('/settings?section=contratos')}
+            style={{ height: 36, padding: '0 16px', background: '#FFFFFF', border: '1px solid #000', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#000', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <i className="ti ti-settings" style={{ fontSize: 13 }} /> Modelos
+          </button>
+          <button onClick={() => setNewDrawerOpen(true)}
+            style={{ height: 36, padding: '0 18px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <i className="ti ti-plus" style={{ fontSize: 14 }} /> Novo contrato
+          </button>
         </div>
 
         {/* Table / Empty */}
@@ -847,11 +838,11 @@ export function ContratosPage() {
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                 <button onClick={() => setNewDrawerOpen(true)}
-                  style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  style={{ height: 36, padding: '0 18px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo contrato
                 </button>
                 <button onClick={() => navigate('/settings?section=contratos')}
-                  style={{ height: 36, padding: '0 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  style={{ height: 36, padding: '0 16px', background: '#FFFFFF', border: '1px solid #000', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#000', cursor: 'pointer', fontFamily: 'inherit' }}>
                   Configurar modelos
                 </button>
               </div>
