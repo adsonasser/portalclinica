@@ -230,11 +230,10 @@ function CloseConvModal({ open, onClose, onConfirm, loading }: {
 }
 
 // ─── Quick Replies Popover ────────────────────────────────────────────────────
-function QuickRepliesPopover({ replies, filter, onSelect, anchorRef }: {
+function QuickRepliesPopover({ replies, filter, onSelect }: {
   replies: QuickReply[];
   filter: string;
   onSelect: (content: string) => void;
-  anchorRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const visible = replies.filter(r => {
     if (!filter) return true;
@@ -805,7 +804,6 @@ export function MessagesPage() {
                   <QuickRepliesPopover
                     replies={quickReplies}
                     filter={qrFilter}
-                    anchorRef={composeBoxRef}
                     onSelect={content => applyQuickReply(content, selected)}
                   />
                 )}

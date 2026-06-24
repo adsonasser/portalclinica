@@ -34,27 +34,7 @@ const SOURCE_LABEL: Record<string, string> = {
   google: 'Google', site: 'Site', outro: 'Outro',
 };
 
-function InfoRow({ icon, label, value }: { icon: string; label: string; value?: string | null }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: '1px solid #F4F4F5' }}>
-      <i className={`ti ${icon}`} style={{ fontSize: 14, color: '#A1A1AA', marginTop: 1, flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: '#A1A1AA', marginBottom: 1 }}>{label}</div>
-        <div style={{ fontSize: 13, color: value ? '#191C1D' : '#C4C4C4', fontStyle: value ? 'normal' : 'italic' }}>
-          {value || 'Não informado'}
-        </div>
-      </div>
-    </div>
-  );
-}
 
-function SectionTitle({ title }: { title: string }) {
-  return (
-    <div style={{ fontSize: 10, fontWeight: 600, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 4, marginTop: 16 }}>
-      {title}
-    </div>
-  );
-}
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
