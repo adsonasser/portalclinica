@@ -737,7 +737,7 @@ export function AppLayout() {
         zIndex: 31,
         overflowY: 'auto',
         overflowX: 'hidden',
-        background: 'transparent',
+        background: '#FAFAFA',
       }}>
         <Outlet />
       </main>
