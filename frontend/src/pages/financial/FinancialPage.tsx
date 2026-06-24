@@ -1882,16 +1882,16 @@ function VendasTab({ sales }: { sales: Sale[] }) {
     <div style={{ padding:'16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
 
       {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14 }}>
         {kpis.map(k => (
-          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ width:40, height:40, borderRadius:10, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className={`ti ${k.icon}`} style={{ fontSize:18, color:k.iconColor }} />
+          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:20, border:'1px solid #EAECEF', padding:'18px 20px', display:'flex', alignItems:'center', gap:14, boxShadow:'0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ width:46, height:46, borderRadius:14, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <i className={`ti ${k.icon}`} style={{ fontSize:21, color:k.iconColor }} />
             </div>
             <div style={{ minWidth:0 }}>
-              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{k.label}</div>
-              <div style={{ fontSize:18, fontWeight:700, color:'#09090B', lineHeight:1.15 }}>{k.value}</div>
-              <div style={{ fontSize:11, color:'#A1A1AA', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
+              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:3, textTransform:'uppercase', letterSpacing:'.05em' }}>{k.label}</div>
+              <div style={{ fontSize:20, fontWeight:700, color:'#09090B', lineHeight:1.1 }}>{k.value}</div>
+              <div style={{ fontSize:11, color:'#71717A', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
             </div>
           </div>
         ))}

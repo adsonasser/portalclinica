@@ -157,14 +157,14 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 // ─── Kpi ──────────────────────────────────────────────────────────────────────
 function Kpi({ icon, iconBg, iconColor, label, value, sub }: { icon: string; iconBg: string; iconColor: string; label: string; value: string; sub: string }) {
   return (
-    <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: iconBg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <i className={`ti ${icon}`} style={{ fontSize: 18, color: iconColor }} />
+    <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+      <div style={{ width: 46, height: 46, borderRadius: 14, background: iconBg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <i className={`ti ${icon}`} style={{ fontSize: 21, color: iconColor }} />
       </div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' }}>{label}</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#09090B', lineHeight: 1.15 }}>{value}</div>
-        <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>
+        <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#09090B', lineHeight: 1.1 }}>{value}</div>
+        <div style={{ fontSize: 11, color: '#71717A', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>
       </div>
     </div>
   );

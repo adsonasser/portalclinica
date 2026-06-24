@@ -230,15 +230,16 @@ function fillVariables(content: string, data: { patient?: any; clinic?: any; use
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 
-function KpiCard({ label, value, icon, iconBg, iconColor }: { label: string; value: number; icon: string; iconBg: string; iconColor: string }) {
+function KpiCard({ label, value, sub, icon, iconBg, iconColor }: { label: string; value: number; sub?: string; icon: string; iconBg: string; iconColor: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 20px', background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7' }}>
-      <div style={{ width: 42, height: 42, borderRadius: 10, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <i className={`ti ${icon}`} style={{ fontSize: 20, color: iconColor }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+      <div style={{ width: 46, height: 46, borderRadius: 14, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <i className={`ti ${icon}`} style={{ fontSize: 21, color: iconColor }} />
       </div>
       <div>
-        <div style={{ fontSize: 11, color: '#71717A', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: '#09090B', lineHeight: 1.1 }}>{value}</div>
+        <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#09090B', lineHeight: 1.1 }}>{value}</div>
+        {sub && <div style={{ fontSize: 11, color: '#71717A', marginTop: 2 }}>{sub}</div>}
       </div>
     </div>
   );
