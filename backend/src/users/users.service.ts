@@ -34,7 +34,7 @@ export class UsersService {
 
   async update(clinicId: string, id: string, rawData: any) {
     await this.findOne(clinicId, id);
-    const { isProfessional, showInAgenda, ...data } = rawData;
+    const { isProfessional, showInAgenda, profColor, ...data } = rawData;
     if (data.password) data.password = await bcrypt.hash(data.password, 10);
 
     const user = await this.prisma.user.update({
@@ -49,20 +49,30 @@ export class UsersService {
         if (existing) {
           await this.prisma.professional.update({
             where: { id: existing.id },
-            data: { active: true, ...(showInAgenda !== undefined ? { showInAgenda } : {}) },
+            data: {
+              active: true,
+              ...(showInAgenda !== undefined ? { showInAgenda } : {}),
+              ...(profColor ? { color: profColor } : {}),
+            },
           });
         } else {
           await this.prisma.professional.create({
-            data: { clinicId, userId: id, active: true, showInAgenda: showInAgenda ?? true },
+            data: { clinicId, userId: id, active: true, showInAgenda: showInAgenda ?? true, ...(profColor ? { color: profColor } : {}) },
           });
         }
       } else if (existing) {
         await this.prisma.professional.update({ where: { id: existing.id }, data: { active: false } });
       }
-    } else if (showInAgenda !== undefined) {
+    } else if (showInAgenda !== undefined || profColor) {
       const existing = await this.prisma.professional.findFirst({ where: { userId: id, clinicId } });
       if (existing) {
-        await this.prisma.professional.update({ where: { id: existing.id }, data: { showInAgenda } });
+        await this.prisma.professional.update({
+          where: { id: existing.id },
+          data: {
+            ...(showInAgenda !== undefined ? { showInAgenda } : {}),
+            ...(profColor ? { color: profColor } : {}),
+          },
+        });
       }
     }
 

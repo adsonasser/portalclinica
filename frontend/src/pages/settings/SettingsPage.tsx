@@ -1115,6 +1115,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const [fProfileId, setFProfileId] = useState('');
   const [fIsProfessional, setFIsProfessional] = useState(false);
   const [fShowInAgenda, setFShowInAgenda] = useState(true);
+  const [fProfColor, setFProfColor] = useState('#7C3AED');
   const [fErr, setFErr] = useState('');
   const { data: users = [], isLoading } = useQuery({ queryKey: ['users'], queryFn: usersApi.list });
   const { data: profiles = [] } = useQuery({ queryKey: ['access-profiles'], queryFn: accessProfilesApi.list });
@@ -1122,7 +1123,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['agenda-professionals'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
   const removeMut = useMutation({ mutationFn: (id: string) => usersApi.remove(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setDeleteConfirm(null); } });
 
-  function openNew() { setEditItem(null); setFName(''); setFEmail(''); setFPass(''); setFRole('PROFESSIONAL'); setFProfileId(''); setFIsProfessional(false); setFShowInAgenda(true); setFErr(''); setShowForm(true); }
+  function openNew() { setEditItem(null); setFName(''); setFEmail(''); setFPass(''); setFRole('PROFESSIONAL'); setFProfileId(''); setFIsProfessional(false); setFShowInAgenda(true); setFProfColor('#7C3AED'); setFErr(''); setShowForm(true); }
   function openEdit(u: any) {
     setEditItem(u);
     setFName(u.name || '');
@@ -1132,6 +1133,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     setFProfileId(u.accessProfileId || '');
     setFIsProfessional(!!(u.professional?.active));
     setFShowInAgenda(u.professional?.showInAgenda ?? true);
+    setFProfColor(u.professional?.color || '#7C3AED');
     setFErr('');
     setShowForm(true);
   }
@@ -1140,7 +1142,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     if (!editItem && !fEmail.trim()) { setFErr('Informe o e-mail.'); return; }
     if (!editItem && fPass.length < 6) { setFErr('Senha mínima: 6 caracteres.'); return; }
     if (editItem) {
-      updateMut.mutate({ id: editItem.id, data: { name: fName.trim(), role: fRole, accessProfileId: fProfileId || null, isProfessional: fIsProfessional, showInAgenda: fIsProfessional ? fShowInAgenda : undefined } });
+      updateMut.mutate({ id: editItem.id, data: { name: fName.trim(), role: fRole, accessProfileId: fProfileId || null, isProfessional: fIsProfessional, showInAgenda: fIsProfessional ? fShowInAgenda : undefined, profColor: fIsProfessional ? fProfColor : undefined } });
     } else {
       createMut.mutate({ name: fName.trim(), email: fEmail.trim(), password: fPass, role: fRole, accessProfileId: fProfileId || null });
     }
@@ -1172,7 +1174,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
                 const inAgenda = isPro && (u.professional?.showInAgenda ?? true);
                 return (
                   <tr key={u.id} style={{ borderBottom: '1px solid #F4F4F5' }} onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#18181B', flexShrink: 0 }}>{initials(u.name)}</div><span style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{u.name}</span></div></td>
+                    <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ position: 'relative', flexShrink: 0 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#18181B' }}>{initials(u.name)}</div>{isPro && u.professional?.color && <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: u.professional.color, border: '2px solid #fff' }} />}</div><span style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{u.name}</span></div></td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: '#71717A' }}>{u.email}</td>
                     <td style={{ padding: '12px 16px' }}>
                       {u.accessProfile
@@ -1237,13 +1239,33 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
                     <Toggle on={fIsProfessional} onChange={() => setFIsProfessional(v => !v)} />
                   </div>
                   {fIsProfessional && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Aparece na agenda?</div>
-                        <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Exibir coluna deste profissional na agenda</div>
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Aparece na agenda?</div>
+                          <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Exibir coluna deste profissional na agenda</div>
+                        </div>
+                        <Toggle on={fShowInAgenda} onChange={() => setFShowInAgenda(v => !v)} />
                       </div>
-                      <Toggle on={fShowInAgenda} onChange={() => setFShowInAgenda(v => !v)} />
-                    </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B', marginBottom: 8 }}>Cor na agenda</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {['#7C3AED','#2563EB','#16A34A','#EC4899','#D97706','#DC2626','#0891B2','#EA580C','#65A30D','#6B7280'].map(c => (
+                            <button key={c} onClick={() => setFProfColor(c)}
+                              style={{ width: 28, height: 28, borderRadius: 8, background: c, border: fProfColor === c ? '3px solid #000' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', boxSizing: 'border-box' }}>
+                              {fProfColor === c && <i className="ti ti-check" style={{ fontSize: 13, color: '#fff' }} />}
+                            </button>
+                          ))}
+                          <input type="color" value={fProfColor} onChange={e => setFProfColor(e.target.value)}
+                            title="Cor personalizada"
+                            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #E4E4E7', padding: 0, cursor: 'pointer', background: 'none' }} />
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: fProfColor }} />
+                          <span style={{ fontSize: 11, color: '#71717A' }}>Cor selecionada: {fProfColor}</span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               )}

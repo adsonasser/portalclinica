@@ -4,7 +4,20 @@ const KEYFRAMES = `
 @keyframes _pcl_slide  { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
 @keyframes _pcl_spin   { to { transform: rotate(360deg); } }
 
-/* NC symbol: pop in, then float */
+/* SVG draw — stroke-dashoffset 1→0, pathLength normalised to 1 */
+@keyframes _pcl_draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* Fade + glow after draw completes */
+@keyframes _pcl_glow {
+  0%   { opacity: 1; filter: drop-shadow(0 0 0px #00000000); }
+  50%  { filter: drop-shadow(0 0 6px rgba(0,0,0,0.18)); }
+  100% { opacity: 1; filter: drop-shadow(0 0 0px #00000000); }
+}
+
+/* NC symbol: float loop (SectionLoader) */
 @keyframes _pcl_nc_pop {
   0%   { transform: scale(0.55); opacity: 0; }
   65%  { transform: scale(1.06); opacity: 1; }
@@ -12,17 +25,17 @@ const KEYFRAMES = `
   100% { transform: scale(1);    opacity: 1; }
 }
 @keyframes _pcl_nc_float {
-  0%, 100% { transform: scale(1) translateY(0px);  }
-  50%       { transform: scale(1) translateY(-5px); }
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-5px); }
 }
 
-/* Wordmark: fade-slide up after symbol appears */
+/* Wordmark: fade-slide up */
 @keyframes _pcl_word_in {
   0%   { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0);   }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-/* Progress bar track fade in */
+/* Progress bar fade-in */
 @keyframes _pcl_bar_in {
   0%   { opacity: 0; }
   100% { opacity: 1; }
@@ -55,7 +68,14 @@ export function Spinner({ size = 20, thickness = 2, color = '#000000' }: Spinner
   );
 }
 
-// ── PageLoader — full-screen (AuthGuard) ──────────────────────────────────────
+// ── PageLoader — full-screen com fundo de vidro fosco + SVG draw ──────────────
+//
+// Sequência:
+//   0.0–0.9s   letra "n" desenhada
+//   0.5–1.4s   letra "c" desenhada (com sobreposição)
+//   1.2s       glow sutil no SVG
+//   1.4s       wordmark aparece
+//   1.7s       barra de progresso inicia
 
 export function PageLoader() {
   injectKeyframes();
@@ -64,40 +84,66 @@ export function PageLoader() {
       position: 'fixed', inset: 0, zIndex: 9999,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      background: '#FAFAFA',
+      // fundo de vidro fosco — mostra levemente o conteúdo por baixo
+      background: 'rgba(250, 250, 250, 0.78)',
+      backdropFilter: 'blur(22px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(22px) saturate(160%)',
     }}>
-      {/* NC symbol — pops in then floats */}
-      <img
-        src="/nc-symbol.png"
-        alt=""
-        style={{
-          width: 64, height: 64, objectFit: 'contain',
-          animation: '_pcl_nc_pop 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards, _pcl_nc_float 2.4s ease-in-out 0.55s infinite',
-        }}
-      />
 
-      {/* Wordmark fades in after symbol */}
+      {/*
+        SVG "nc" com animação de desenho stroke por stroke.
+        pathLength="1" normaliza o comprimento → stroke-dasharray/offset em [0,1].
+        Cada letra parte de stroke-dashoffset:1 (invisível) → 0 (completo).
+      */}
+      <svg
+        viewBox="0 0 106 44"
+        width="106"
+        height="44"
+        fill="none"
+        stroke="#09090B"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ animation: '_pcl_glow 1.4s ease-in-out 1.2s 1 both' }}
+      >
+        {/* Letra n */}
+        <path
+          d="M 6,39 L 6,8 C 6,4 12,4 18,4 C 26,4 30,11 30,21 L 30,39"
+          pathLength="1"
+          strokeDasharray="1"
+          style={{ animation: '_pcl_draw 0.9s cubic-bezier(0.4,0,0.2,1) 0.05s both' }}
+        />
+        {/* Letra c */}
+        <path
+          d="M 99,10 C 87,3 50,3 44,22 C 38,41 73,41 99,34"
+          pathLength="1"
+          strokeDasharray="1"
+          style={{ animation: '_pcl_draw 0.9s cubic-bezier(0.4,0,0.2,1) 0.55s both' }}
+        />
+      </svg>
+
+      {/* Wordmark "nassclin" — aparece após as letras serem desenhadas */}
       <img
         src="/nassclin-logo.png"
         alt="nassclin"
         style={{
-          height: 18, width: 'auto', objectFit: 'contain', marginTop: 18,
-          animation: '_pcl_word_in 0.4s ease-out 0.7s both',
+          height: 16, width: 'auto', objectFit: 'contain', marginTop: 22,
+          animation: '_pcl_word_in 0.45s ease-out 1.4s both',
         }}
       />
 
-      {/* Progress bar */}
+      {/* Barra de progresso fina */}
       <div style={{
-        width: 160, height: 1.5, borderRadius: 99,
+        width: 140, height: 1.5, borderRadius: 99,
         background: '#E4E4E7', overflow: 'hidden', position: 'relative',
-        marginTop: 28,
-        animation: '_pcl_bar_in 0.3s ease 1s both',
+        marginTop: 30,
+        animation: '_pcl_bar_in 0.3s ease 1.7s both',
       }}>
         <div style={{
           position: 'absolute', top: 0, left: 0,
           width: '45%', height: '100%',
-          background: '#000000', borderRadius: 99,
-          animation: '_pcl_slide 1.4s ease-in-out 1s infinite',
+          background: '#09090B', borderRadius: 99,
+          animation: '_pcl_slide 1.5s ease-in-out 1.7s infinite',
         }} />
       </div>
     </div>
