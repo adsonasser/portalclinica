@@ -3,7 +3,7 @@ import { ProntuarioService } from './prontuario.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ClinicId } from '../common/decorators/clinic.decorator';
+import { ClinicId, CurrentUser } from '../common/decorators/clinic.decorator';
 
 const WRITE_ROLES = ['PROFESSIONAL', 'ADMIN', 'SUPER_ADMIN'];
 
@@ -19,14 +19,14 @@ export class ProntuarioController {
 
   @Post('evolution/:patientId')
   @Roles(...WRITE_ROLES)
-  createEvolution(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body() dto: any) {
-    return this.prontuarioService.createEvolution(clinicId, patientId, dto);
+  createEvolution(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body() dto: any, @CurrentUser() user: any) {
+    return this.prontuarioService.createEvolution(clinicId, patientId, dto, user?.id);
   }
 
   @Post('draft/:patientId')
   @Roles(...WRITE_ROLES)
-  saveDraft(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body('content') content: string) {
-    return this.prontuarioService.saveDraft(clinicId, patientId, content);
+  saveDraft(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body('content') content: string, @CurrentUser() user: any) {
+    return this.prontuarioService.saveDraft(clinicId, patientId, content, user?.id);
   }
 
   @Delete('draft/:patientId')
@@ -49,8 +49,8 @@ export class ProntuarioController {
 
   @Post('prescription/:patientId')
   @Roles(...WRITE_ROLES)
-  createPrescription(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body() dto: any) {
-    return this.prontuarioService.createPrescription(clinicId, patientId, dto);
+  createPrescription(@ClinicId() clinicId: string, @Param('patientId') patientId: string, @Body() dto: any, @CurrentUser() user: any) {
+    return this.prontuarioService.createPrescription(clinicId, patientId, dto, user?.id);
   }
 
   @Delete('prescription/:id')

@@ -6,9 +6,10 @@ export class ProntuarioService {
   constructor(private prisma: PrismaService) {}
 
   async getByPatient(clinicId: string, patientId: string) {
+    const authorSelect = { select: { id: true, name: true } };
     const [evolutionNotes, prescriptions, anamnesis, patientNotes, draft] = await Promise.all([
-      this.prisma.evolutionNote.findMany({ where: { clinicId, patientId, status: 'finalized' }, orderBy: { date: 'desc' } }),
-      this.prisma.prescription.findMany({ where: { clinicId, patientId }, orderBy: { date: 'desc' } }),
+      this.prisma.evolutionNote.findMany({ where: { clinicId, patientId, status: 'finalized' }, include: { author: authorSelect }, orderBy: { date: 'desc' } }),
+      this.prisma.prescription.findMany({ where: { clinicId, patientId }, include: { author: authorSelect }, orderBy: { date: 'desc' } }),
       this.prisma.anamnesis.findFirst({ where: { clinicId, patientId }, orderBy: { createdAt: 'desc' } }),
       this.prisma.patientNote.findMany({ where: { clinicId, patientId }, orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }] }),
       this.prisma.evolutionNote.findFirst({ where: { clinicId, patientId, status: 'draft' }, orderBy: { updatedAt: 'desc' } }),
@@ -16,13 +17,13 @@ export class ProntuarioService {
     return { evolutionNotes, prescriptions, anamnesis, patientNotes, draft };
   }
 
-  async createEvolution(clinicId: string, patientId: string, data: any) {
-    return this.prisma.evolutionNote.create({ data: { ...data, status: 'finalized', clinicId, patientId } });
+  async createEvolution(clinicId: string, patientId: string, data: any, userId?: string) {
+    return this.prisma.evolutionNote.create({ data: { ...data, status: 'finalized', clinicId, patientId, ...(userId ? { userId } : {}) } });
   }
 
-  async saveDraft(clinicId: string, patientId: string, content: string) {
+  async saveDraft(clinicId: string, patientId: string, content: string, userId?: string) {
     await this.prisma.evolutionNote.deleteMany({ where: { clinicId, patientId, status: 'draft' } });
-    return this.prisma.evolutionNote.create({ data: { clinicId, patientId, content, status: 'draft' } });
+    return this.prisma.evolutionNote.create({ data: { clinicId, patientId, content, status: 'draft', ...(userId ? { userId } : {}) } });
   }
 
   async deleteDraft(clinicId: string, patientId: string) {
@@ -43,8 +44,8 @@ export class ProntuarioService {
     return this.prisma.evolutionNote.delete({ where: { id } });
   }
 
-  async createPrescription(clinicId: string, patientId: string, data: any) {
-    return this.prisma.prescription.create({ data: { ...data, clinicId, patientId } });
+  async createPrescription(clinicId: string, patientId: string, data: any, userId?: string) {
+    return this.prisma.prescription.create({ data: { ...data, clinicId, patientId, ...(userId ? { userId } : {}) } });
   }
 
   async deletePrescription(clinicId: string, id: string) {

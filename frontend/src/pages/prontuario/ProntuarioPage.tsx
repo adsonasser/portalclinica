@@ -142,14 +142,12 @@ function buildDocPreviewHTML(
 
 function buildHistory(patient: any): HistoryItem[] {
   const items: HistoryItem[] = [];
-  const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
-  const profName = user?.name || 'Profissional';
 
   (patient.evolutionNotes || []).forEach((n: any) => {
     const clean = stripHtml(n.content || '');
     items.push({
       id: n.id, date: new Date(n.date),
-      tipo: 'Evolução', profissional: profName,
+      tipo: 'Evolução', profissional: n.author?.name || 'Profissional',
       resumo: clean.slice(0, 120) + (clean.length > 120 ? '…' : ''),
       status: 'finalizado',
       icon: 'ti-notes', iconColor: '#16A34A', iconBg: '#F0FDF4',
@@ -161,7 +159,7 @@ function buildHistory(patient: any): HistoryItem[] {
     const clean = stripHtml(p.content || '');
     items.push({
       id: p.id, date: new Date(p.date),
-      tipo: 'Receita', profissional: profName,
+      tipo: 'Receita', profissional: p.author?.name || 'Profissional',
       resumo: clean.slice(0, 120) + (clean.length > 120 ? '…' : ''),
       status: 'enviada',
       icon: 'ti-pill', iconColor: '#7C3AED', iconBg: '#F5F3FF',

@@ -254,12 +254,14 @@ model User {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  accessProfile AccessProfile?  @relation(fields: [accessProfileId], references: [id])
-  professional  Professional?
-  tasks         Task[]          @relation("TaskAssignee")
-  messages      Message[]
-  chatMessages  ChatMessage[]
+  clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  accessProfile   AccessProfile?  @relation(fields: [accessProfileId], references: [id])
+  professional    Professional?
+  tasks           Task[]          @relation("TaskAssignee")
+  messages        Message[]
+  chatMessages    ChatMessage[]
+  evolutionNotes  EvolutionNote[] @relation("EvolutionNoteAuthor")
+  prescriptions   Prescription[]  @relation("PrescriptionAuthor")
 
   @@unique([clinicId, email])
   @@map("users")
@@ -471,6 +473,7 @@ model EvolutionNote {
   id        String   @id @default(cuid())
   clinicId  String
   patientId String
+  userId    String?
   content   String
   date      DateTime @default(now())
   status    String   @default("finalized")
@@ -478,6 +481,7 @@ model EvolutionNote {
   updatedAt DateTime @updatedAt
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  author  User?   @relation("EvolutionNoteAuthor", fields: [userId], references: [id])
 
   @@map("evolution_notes")
 }
@@ -486,12 +490,14 @@ model Prescription {
   id        String   @id @default(cuid())
   clinicId  String
   patientId String
+  userId    String?
   content   String
   date      DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  author  User?        @relation("PrescriptionAuthor", fields: [userId], references: [id])
 
   @@map("prescriptions")
 }
