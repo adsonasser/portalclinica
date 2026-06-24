@@ -97,27 +97,20 @@ function ScoreWidget({ patient }: { patient: any }) {
     { label: 'Relacionamento',   pts: breakdown.relacionamento, max: 5  },
   ];
 
-  const isPaciente = (patient.contactTypes ?? []).some((ct: any) => ct.contactType?.name?.toLowerCase() === 'paciente') || patient.contactType === 'PACIENTE';
-  const scoreTitle = isPaciente ? 'Score do paciente' : 'Score do contato';
-
   return (
-    <div style={{ marginTop: 12, position: 'relative' }}>
+    <div style={{ position: 'relative', width: '100%' }}>
       <div
-        style={{ padding: '12px 14px', background: scoreBg, borderRadius: 10, border: `1px solid ${scoreColor}22`, cursor: 'pointer' }}
         onClick={() => setShowTooltip(v => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: scoreBg, borderRadius: 8, border: `1px solid ${scoreColor}22`, cursor: 'pointer' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: scoreColor, textTransform: 'uppercase', letterSpacing: '.06em' }}>{scoreTitle}</div>
-          <i className="ti ti-info-circle" style={{ fontSize: 13, color: scoreColor, opacity: 0.7 }} />
+        <div style={{ fontSize: 17, fontWeight: 800, color: scoreColor, lineHeight: 1, flexShrink: 0, minWidth: 24 }}>{score}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ height: 4, background: `${scoreColor}22`, borderRadius: 99, overflow: 'hidden', marginBottom: 3 }}>
+            <div style={{ height: '100%', width: `${score}%`, background: scoreColor, borderRadius: 99, transition: 'width .4s ease' }} />
+          </div>
+          <div style={{ fontSize: 10, color: scoreColor, fontWeight: 600, lineHeight: 1 }}>{label}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginBottom: 6 }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: scoreColor, lineHeight: 1 }}>{score}</div>
-          <div style={{ fontSize: 12, color: scoreColor, opacity: 0.7, marginBottom: 2 }}>/100</div>
-        </div>
-        <div style={{ height: 5, background: `${scoreColor}22`, borderRadius: 99, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${score}%`, background: scoreColor, borderRadius: 99, transition: 'width .4s ease' }} />
-        </div>
-        <div style={{ fontSize: 11, color: scoreColor, marginTop: 4, fontWeight: 600 }}>{label}</div>
+        <i className="ti ti-info-circle" style={{ fontSize: 12, color: scoreColor, opacity: 0.7, flexShrink: 0 }} />
       </div>
 
       {showTooltip && (
@@ -1285,6 +1278,8 @@ export function PatientDetailPage() {
   const appointmentCount = patient._count?.appointments ?? 0;
   const sessionCount     = patient._count?.sessions     ?? 0;
   const saleCount        = patient.sales?.length        ?? 0;
+  const totalPago        = (patient.sales || []).reduce((s: number, v: any) => s + (v.paidAmount ?? 0), 0);
+  const fmtBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(v);
 
   // ── Agendamentos futuros / passados ───────────────────────────────────
   const now = new Date();
@@ -1365,67 +1360,106 @@ export function PatientDetailPage() {
     <div style={{ display: 'flex', gap: 20, padding: '24px 28px', fontFamily: "'Inter', system-ui, sans-serif", alignItems: 'flex-start', minHeight: '100%' }}>
 
       {/* ── Coluna esquerda ─────────────────────────────────────────── */}
-      <div style={{ width: 268, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
-        <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', padding: '20px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+      <div style={{ width: 272, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', padding: '18px 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
 
-          {/* Avatar + nome + badges + score */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, paddingBottom: 16, borderBottom: '1px solid #F4F4F5' }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#F4F4F5', border: '2px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: '#71717A', overflow: 'hidden', flexShrink: 0 }}>
+          {/* Avatar + nome + badges */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingBottom: 14, borderBottom: '1px solid #F4F4F5' }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#F4F4F5', border: '2px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#71717A', overflow: 'hidden', flexShrink: 0 }}>
               {patient.avatarUrl
-                ? <img src={patient.avatarUrl} alt={patient.name} style={{ width: 64, height: 64, objectFit: 'cover' }} />
+                ? <img src={patient.avatarUrl} alt={patient.name} style={{ width: 56, height: 56, objectFit: 'cover' }} />
                 : initials
               }
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#191C1D' }}>{patient.name}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D', lineHeight: 1.2 }}>{patient.name}</div>
             </div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center' }}>
-              <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 99, background: ct.bg, color: ct.color }}>{ct.label}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '2px 10px', borderRadius: 99, background: badge.bg, color: badge.color }}>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: ct.bg, color: ct.color }}>{ct.label}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: badge.bg, color: badge.color }}>
                 <span style={{ width: 4, height: 4, borderRadius: '50%', background: badge.dot, flexShrink: 0 }} />{badge.label}
               </span>
             </div>
-            {/* Score logo abaixo do nome */}
+
+            {/* Score compacto — 1 linha */}
             <ScoreWidget patient={patient} />
+
+            {/* Mini-KPIs — 3 stats em uma linha */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, width: '100%', marginTop: 2 }}>
+              {[
+                { label: 'Total pago',    value: fmtBRL(totalPago),      icon: 'ti-coin' },
+                { label: 'Sessões',       value: String(sessionCount),   icon: 'ti-activity' },
+                { label: 'Última visita', value: lastAppt ? format(new Date(lastAppt.startTime), 'dd/MM/yy', { locale: ptBR }) : '—', icon: 'ti-calendar' },
+              ].map(k => (
+                <div key={k.label} style={{ background: '#F9F9F9', borderRadius: 8, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#09090B', lineHeight: 1.1, marginBottom: 2 }}>{k.value}</div>
+                  <div style={{ fontSize: 9, color: '#71717A', textTransform: 'uppercase', letterSpacing: '.04em', lineHeight: 1 }}>{k.label}</div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Contato */}
-          <SectionTitle title="Contato" />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <InfoRow icon="ti-brand-whatsapp" label="WhatsApp"   value={patient.phone} />
-            <InfoRow icon="ti-mail"           label="E-mail"     value={patient.email} />
-          </div>
-
-          {/* Cadastro */}
-          <SectionTitle title="Cadastro" />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <InfoRow icon="ti-calendar-event" label="Data de cadastro" value={patient.createdAt ? format(new Date(patient.createdAt), "dd 'de' MMMM 'de' yyyy", { locale: ptBR }) : null} />
-            <InfoRow icon="ti-share"          label="Origem"            value={SOURCE_LABEL[patient.source] || patient.source} />
-            <InfoRow icon="ti-user-check"     label="Responsável"       value="Admin" />
-          </div>
-
-          {/* Informações importantes */}
-          <SectionTitle title="Informações importantes" />
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <InfoRow icon="ti-alert-triangle" label="Alergias"           value={patient.alergias} />
-            <InfoRow icon="ti-pill"           label="Medicamentos em uso" value={patient.medicamentos} />
-            <InfoRow icon="ti-heart-rate-monitor" label="Comorbidades"   value={patient.comorbidades} />
-            <InfoRow icon="ti-target"         label="Objetivo"           value={patient.objetivo} />
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
-              <i className="ti ti-notes" style={{ fontSize: 14, color: '#A1A1AA', marginTop: 1, flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: '#A1A1AA', marginBottom: 1 }}>Observações</div>
-                <div style={{ fontSize: 13, color: patient.notes ? '#191C1D' : '#C4C4C4', fontStyle: patient.notes ? 'normal' : 'italic' }}>
-                  {patient.notes || 'Sem observações'}
+          <div style={{ paddingTop: 12, paddingBottom: 12, borderBottom: '1px solid #F4F4F5' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Contato</div>
+            {[
+              { icon: 'ti-brand-whatsapp', label: 'WhatsApp', value: patient.phone },
+              { icon: 'ti-mail',           label: 'E-mail',   value: patient.email },
+            ].map(r => (
+              <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 0' }}>
+                <i className={`ti ${r.icon}`} style={{ fontSize: 13, color: '#A1A1AA', flexShrink: 0, width: 16 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: '#A1A1AA', lineHeight: 1 }}>{r.label}</div>
+                  <div style={{ fontSize: 12, color: r.value ? '#09090B' : '#C4C4C4', fontStyle: r.value ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.value || undefined}>{r.value || '—'}</div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* Cadastro — grade 2 colunas */}
+          <div style={{ paddingTop: 12, paddingBottom: 12, borderBottom: '1px solid #F4F4F5' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Cadastro</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 10px' }}>
+              {[
+                { label: 'Origem',        value: SOURCE_LABEL[patient.source] || patient.source },
+                { label: 'Responsável',   value: 'Admin' },
+                { label: 'Cadastrado em', value: patient.createdAt ? format(new Date(patient.createdAt), 'dd/MM/yyyy', { locale: ptBR }) : null },
+                { label: 'Agendamentos',  value: `${appointmentCount} no total` },
+              ].map(c => (
+                <div key={c.label}>
+                  <div style={{ fontSize: 10, color: '#A1A1AA', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>{c.label}</div>
+                  <div style={{ fontSize: 12, color: c.value ? '#09090B' : '#C4C4C4', fontStyle: c.value ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.value || undefined}>{c.value || '—'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Informações clínicas — grade 2 colunas + obs full width */}
+          <div style={{ paddingTop: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#A1A1AA', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Informações importantes</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 10px', marginBottom: 8 }}>
+              {[
+                { label: 'Alergias',      value: patient.alergias },
+                { label: 'Medicamentos',  value: patient.medicamentos },
+                { label: 'Comorbidades',  value: patient.comorbidades },
+                { label: 'Objetivo',      value: patient.objetivo },
+              ].map(c => (
+                <div key={c.label}>
+                  <div style={{ fontSize: 10, color: '#A1A1AA', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>{c.label}</div>
+                  <div style={{ fontSize: 12, color: c.value ? '#09090B' : '#C4C4C4', fontStyle: c.value ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.value || undefined}>{c.value || '—'}</div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: '#A1A1AA', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>Observações</div>
+              <div style={{ fontSize: 12, color: patient.notes ? '#09090B' : '#C4C4C4', fontStyle: patient.notes ? 'normal' : 'italic', lineHeight: 1.5 }}>{patient.notes || '—'}</div>
             </div>
           </div>
 
           {/* Link editar */}
           <button
             onClick={() => openEdit(patient)}
-            style={{ marginTop: 12, width: '100%', height: 32, background: 'transparent', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 12, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+            style={{ marginTop: 14, width: '100%', height: 32, background: 'transparent', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 12, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#F4F4F5'; (e.currentTarget as HTMLElement).style.color = '#191C1D'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = '#71717A'; }}
           >
