@@ -781,7 +781,7 @@ export function ContratosPage() {
     v != null ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—';
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FAFAFA', fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
