@@ -84,10 +84,9 @@ export function PageLoader() {
       position: 'fixed', inset: 0, zIndex: 9999,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      // fundo de vidro fosco — mostra levemente o conteúdo por baixo
-      background: 'rgba(250, 250, 250, 0.78)',
-      backdropFilter: 'blur(22px) saturate(160%)',
-      WebkitBackdropFilter: 'blur(22px) saturate(160%)',
+      background: 'rgba(255, 255, 255, 0.55)',
+      backdropFilter: 'blur(32px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(32px) saturate(180%)',
     }}>
 
       {/*
@@ -97,8 +96,8 @@ export function PageLoader() {
       */}
       <svg
         viewBox="0 0 106 44"
-        width="106"
-        height="44"
+        width="120"
+        height="50"
         fill="none"
         stroke="#09090B"
         strokeWidth="3"
@@ -122,28 +121,18 @@ export function PageLoader() {
         />
       </svg>
 
-      {/* Wordmark "nassclin" — aparece após as letras serem desenhadas */}
-      <img
-        src="/nassclin-logo.png"
-        alt="nassclin"
-        style={{
-          height: 16, width: 'auto', objectFit: 'contain', marginTop: 22,
-          animation: '_pcl_word_in 0.45s ease-out 1.4s both',
-        }}
-      />
-
       {/* Barra de progresso fina */}
       <div style={{
-        width: 140, height: 1.5, borderRadius: 99,
-        background: '#E4E4E7', overflow: 'hidden', position: 'relative',
-        marginTop: 30,
-        animation: '_pcl_bar_in 0.3s ease 1.7s both',
+        width: 120, height: 1.5, borderRadius: 99,
+        background: 'rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative',
+        marginTop: 32,
+        animation: '_pcl_bar_in 0.3s ease 1.2s both',
       }}>
         <div style={{
           position: 'absolute', top: 0, left: 0,
           width: '45%', height: '100%',
           background: '#09090B', borderRadius: 99,
-          animation: '_pcl_slide 1.5s ease-in-out 1.7s infinite',
+          animation: '_pcl_slide 1.5s ease-in-out 1.2s infinite',
         }} />
       </div>
     </div>
