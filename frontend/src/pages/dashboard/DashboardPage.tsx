@@ -18,7 +18,7 @@ export function DashboardPage() {
   const { data: stats, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardApi.stats });
   const { data: chart } = useQuery({ queryKey: ['dashboard-chart'], queryFn: () => dashboardApi.chart(6) });
 
-  if (isLoading) return <SectionLoader label="Carregando dashboard..." style={{ height: '60vh' }} />;
+  if (isLoading) return <SectionLoader label="Carregando dashboard..." />;
 
   const kpis = stats?.kpis || {};
   const proximos = stats?.proximosAgendamentos || [];

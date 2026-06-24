@@ -1257,7 +1257,7 @@ export function PatientDetailPage() {
     }
   }, [patient]);
 
-  if (isLoading) return <SectionLoader style={{ height: '60vh' }} />;
+  if (isLoading) return <SectionLoader />;
 
   if (isError || !patient) {
     return (

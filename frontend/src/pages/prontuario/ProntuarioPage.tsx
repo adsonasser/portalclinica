@@ -579,7 +579,7 @@ export function ProntuarioPage() {
 
   const hasAlerts = patient && (patient.alergias || patient.medicamentos || patient.comorbidades || patient.alertaInterno);
 
-  if (isLoading) return <SectionLoader label="Carregando prontuário..." style={{ height: '100%' }} />;
+  if (isLoading) return <SectionLoader label="Carregando prontuário..." />;
 
   if (!patient) {
     return (

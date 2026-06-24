@@ -17,19 +17,19 @@ const KEYFRAMES = `
   100% { opacity: 1; filter: drop-shadow(0 0 0px #00000000); }
 }
 
-/* NC symbol: float loop (SectionLoader) */
+/* NC symbol float loop */
+@keyframes _pcl_nc_float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-5px); }
+}
 @keyframes _pcl_nc_pop {
   0%   { transform: scale(0.55); opacity: 0; }
   65%  { transform: scale(1.06); opacity: 1; }
   82%  { transform: scale(0.97); }
   100% { transform: scale(1);    opacity: 1; }
 }
-@keyframes _pcl_nc_float {
-  0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-5px); }
-}
 
-/* Wordmark: fade-slide up */
+/* Wordmark fade-slide */
 @keyframes _pcl_word_in {
   0%   { opacity: 0; transform: translateY(6px); }
   100% { opacity: 1; transform: translateY(0); }
@@ -68,14 +68,7 @@ export function Spinner({ size = 20, thickness = 2, color = '#000000' }: Spinner
   );
 }
 
-// ── PageLoader — full-screen com fundo de vidro fosco + SVG draw ──────────────
-//
-// Sequência:
-//   0.0–0.9s   letra "n" desenhada
-//   0.5–1.4s   letra "c" desenhada (com sobreposição)
-//   1.2s       glow sutil no SVG
-//   1.4s       wordmark aparece
-//   1.7s       barra de progresso inicia
+// ── PageLoader — fullscreen (AuthGuard inicial) ───────────────────────────────
 
 export function PageLoader() {
   injectKeyframes();
@@ -88,12 +81,6 @@ export function PageLoader() {
       backdropFilter: 'blur(32px) saturate(180%)',
       WebkitBackdropFilter: 'blur(32px) saturate(180%)',
     }}>
-
-      {/*
-        SVG "nc" com animação de desenho stroke por stroke.
-        pathLength="1" normaliza o comprimento → stroke-dasharray/offset em [0,1].
-        Cada letra parte de stroke-dashoffset:1 (invisível) → 0 (completo).
-      */}
       <svg
         viewBox="0 0 106 44"
         width="120"
@@ -105,14 +92,12 @@ export function PageLoader() {
         strokeLinejoin="round"
         style={{ animation: '_pcl_glow 1.4s ease-in-out 1.2s 1 both' }}
       >
-        {/* Letra n */}
         <path
           d="M 6,39 L 6,8 C 6,4 12,4 18,4 C 26,4 30,11 30,21 L 30,39"
           pathLength="1"
           strokeDasharray="1"
           style={{ animation: '_pcl_draw 0.9s cubic-bezier(0.4,0,0.2,1) 0.05s both' }}
         />
-        {/* Letra c */}
         <path
           d="M 99,10 C 87,3 50,3 44,22 C 38,41 73,41 99,34"
           pathLength="1"
@@ -121,7 +106,6 @@ export function PageLoader() {
         />
       </svg>
 
-      {/* Barra de progresso fina */}
       <div style={{
         width: 120, height: 1.5, borderRadius: 99,
         background: 'rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative',
@@ -139,7 +123,11 @@ export function PageLoader() {
   );
 }
 
-// ── SectionLoader — carregamento de dados de página ───────────────────────────
+// ── SectionLoader — loading de dados de página ────────────────────────────────
+//
+// size="md" (padrão): overlay fixo sobre a área de conteúdo (exclui sidebar + topbar),
+//                     centralizado na tela, com vidro fosco.
+// size="sm":          inline, permanece no fluxo do documento (sub-painéis, tabs internas).
 
 interface SectionLoaderProps {
   label?: string;
@@ -149,25 +137,44 @@ interface SectionLoaderProps {
 
 export function SectionLoader({ label, size = 'md', style }: SectionLoaderProps) {
   injectKeyframes();
-  const imgSize = size === 'sm' ? 32 : 44;
+
+  if (size === 'sm') {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: 10, padding: '32px 16px',
+        ...style,
+      }}>
+        <img
+          src="/nc-symbol.png"
+          alt=""
+          style={{ width: 32, height: 32, objectFit: 'contain', animation: '_pcl_nc_float 2s ease-in-out infinite', opacity: 0.7 }}
+        />
+        {label && <span style={{ fontSize: 12, color: '#A1A1AA', letterSpacing: '0.02em' }}>{label}</span>}
+      </div>
+    );
+  }
+
+  // md — overlay fixo sobre a área de conteúdo (left:96 top:65 = sidebar+topbar)
   return (
     <div style={{
+      position: 'fixed',
+      left: 96, top: 65, right: 0, bottom: 0,
+      zIndex: 200,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      gap: 12, padding: size === 'sm' ? '32px 16px' : '56px 16px',
-      ...style,
+      background: 'rgba(255, 255, 255, 0.55)',
+      backdropFilter: 'blur(22px) saturate(160%)',
+      WebkitBackdropFilter: 'blur(22px) saturate(160%)',
     }}>
       <img
         src="/nc-symbol.png"
         alt=""
-        style={{
-          width: imgSize, height: imgSize, objectFit: 'contain',
-          animation: '_pcl_nc_float 2s ease-in-out infinite',
-          opacity: 0.75,
-        }}
+        style={{ width: 48, height: 48, objectFit: 'contain', animation: '_pcl_nc_float 2s ease-in-out infinite', opacity: 0.85 }}
       />
       {label && (
-        <span style={{ fontSize: 12, color: '#A1A1AA', letterSpacing: '0.02em' }}>
+        <span style={{ fontSize: 12, color: '#71717A', letterSpacing: '0.02em', marginTop: 14 }}>
           {label}
         </span>
       )}
