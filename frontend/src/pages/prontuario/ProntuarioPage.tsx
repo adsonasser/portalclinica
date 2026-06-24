@@ -171,7 +171,7 @@ function buildHistory(patient: any): HistoryItem[] {
     items.push({
       id: d.id, date: new Date(d.createdAt),
       tipo: d.name || d.type || 'Documento',
-      profissional: d.professional || profName,
+      profissional: d.professional || 'Profissional',
       resumo: d.type || 'Documento',
       status: 'salvo',
       icon: 'ti-file-text', iconColor: '#0D9488', iconBg: '#F0FDFA',
