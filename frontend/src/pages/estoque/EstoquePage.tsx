@@ -181,13 +181,19 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 }
 
 // ─── ActionBtn ────────────────────────────────────────────────────────────────
-function ActionBtn({ label, icon, onClick, variant = 'primary' }: { label: string; icon?: string; onClick: () => void; variant?: 'primary' | 'outline' }) {
-  const isPrimary = variant === 'primary';
+function ActionBtn({ label, icon, onClick, variant = 'primary' }: { label: string; icon?: string; onClick: () => void; variant?: 'primary' | 'outline' | 'green' | 'red' }) {
+  const styles: Record<string, { bg: string; border: string; color: string; hoverBg: string }> = {
+    primary: { bg: '#000000', border: 'none',                   color: '#FFFFFF', hoverBg: '#18181B' },
+    outline: { bg: '#FFFFFF', border: '1px solid #000000',      color: '#000000', hoverBg: '#F4F4F5' },
+    green:   { bg: '#FFFFFF', border: '1px solid #16A34A',      color: '#16A34A', hoverBg: '#F0FDF4' },
+    red:     { bg: '#FFFFFF', border: '1px solid #DC2626',      color: '#DC2626', hoverBg: '#FEF2F2' },
+  };
+  const s = styles[variant];
   return (
     <button onClick={onClick}
-      style={{ height: 36, padding: '0 16px', background: isPrimary ? '#000000' : '#FFFFFF', border: isPrimary ? 'none' : '1px solid #000000', borderRadius: 99, fontSize: 13, fontWeight: 600, color: isPrimary ? '#FFFFFF' : '#000000', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = isPrimary ? '#18181B' : '#F4F4F5'; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isPrimary ? '#000000' : '#FFFFFF'; }}>
+      style={{ height: 36, padding: '0 16px', background: s.bg, border: s.border, borderRadius: 99, fontSize: 13, fontWeight: 600, color: s.color, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = s.hoverBg; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = s.bg; }}>
       {icon && <i className={`ti ${icon}`} style={{ fontSize: 14 }} />}
       {label}
     </button>
@@ -529,8 +535,8 @@ function ItensTab() {
           <option value="zerado">Sem estoque</option>
         </select>
         <div style={{ flex: 1 }} />
-        <ActionBtn label="Lançar consumo" icon="ti-minus" variant="outline" onClick={() => { setMovProdId(''); setMovType('CONSUMO'); setShowMov(true); }} />
-        <ActionBtn label="Nova entrada"   icon="ti-plus"  variant="outline" onClick={() => { setMovProdId(''); setMovType('ENTRADA'); setShowMov(true); }} />
+        <ActionBtn label="- Lançar saída"   icon="ti-circle-arrow-up"   variant="red"   onClick={() => { setMovProdId(''); setMovType('CONSUMO'); setShowMov(true); }} />
+        <ActionBtn label="+ Lançar entrada" icon="ti-circle-arrow-down" variant="green" onClick={() => { setMovProdId(''); setMovType('ENTRADA'); setShowMov(true); }} />
         <ActionBtn label="Novo produto"   icon="ti-plus"  onClick={() => { setEditProduct(null); setShowProduct(true); }} />
       </div>
 
@@ -570,11 +576,11 @@ function ItensTab() {
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                      <button title="Lançar entrada" onClick={() => { setMovProdId(p.id); setMovType('ENTRADA'); setShowMov(true); }} style={{ height: 28, width: 28, border: '1px solid #E4E4E7', borderRadius: 6, background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <button title="Lançar entrada" onClick={() => { setMovProdId(p.id); setMovType('ENTRADA'); setShowMov(true); }} style={{ height: 28, width: 28, border: '1px solid #BBF7D0', borderRadius: 6, background: '#F0FDF4', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <i className="ti ti-plus" style={{ fontSize: 13, color: '#16A34A' }} />
                       </button>
-                      <button title="Lançar consumo" onClick={() => { setMovProdId(p.id); setMovType('CONSUMO'); setShowMov(true); }} style={{ height: 28, width: 28, border: '1px solid #E4E4E7', borderRadius: 6, background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <i className="ti ti-minus" style={{ fontSize: 13, color: '#D97706' }} />
+                      <button title="Lançar saída" onClick={() => { setMovProdId(p.id); setMovType('CONSUMO'); setShowMov(true); }} style={{ height: 28, width: 28, border: '1px solid #FECACA', borderRadius: 6, background: '#FEF2F2', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <i className="ti ti-minus" style={{ fontSize: 13, color: '#DC2626' }} />
                       </button>
                       <button title="Editar" onClick={() => { setEditProduct(p); setShowProduct(true); }} style={{ height: 28, width: 28, border: '1px solid #E4E4E7', borderRadius: 6, background: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <i className="ti ti-pencil" style={{ fontSize: 13, color: '#71717A' }} />
@@ -675,8 +681,8 @@ function MovimentosTab() {
           <option value="AJUSTE">Ajuste</option>
         </select>
         <div style={{ flex: 1 }} />
-        <ActionBtn label="Lançar consumo" icon="ti-minus" variant="outline" onClick={() => setShowMov(true)} />
-        <ActionBtn label="Nova entrada"   icon="ti-plus"  onClick={() => setShowMov(true)} />
+        <ActionBtn label="- Lançar saída"   icon="ti-circle-arrow-up"   variant="red"   onClick={() => setShowMov(true)} />
+        <ActionBtn label="+ Lançar entrada" icon="ti-circle-arrow-down" variant="green" onClick={() => setShowMov(true)} />
       </div>
 
       <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7', overflow: 'hidden' }}>

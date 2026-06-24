@@ -2342,41 +2342,41 @@ function ContasTab() {
     <div style={{ padding:'16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
 
       {/* KPIs + Saldo na mesma linha */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:12 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:14 }}>
         {/* Card saldo inicial (editável) */}
-        <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', flexDirection:'column', gap:4 }}>
-          <div style={{ fontSize:11, color:'#71717A', fontWeight:500, textTransform:'uppercase', letterSpacing:'.04em' }}>Saldo inicial</div>
+        <div style={{ background:'#FFFFFF', borderRadius:20, border:'1px solid #EAECEF', padding:'18px 20px', display:'flex', flexDirection:'column', gap:4, boxShadow:'0 2px 8px rgba(0,0,0,0.03)' }}>
+          <div style={{ fontSize:11, color:'#71717A', fontWeight:500, textTransform:'uppercase', letterSpacing:'.05em', marginBottom:3 }}>Saldo inicial</div>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
             <span style={{ fontSize:13, color:'#A1A1AA', fontWeight:500 }}>R$</span>
             <input type="number" value={saldoInicial} onChange={e => setSaldoInicial(e.target.value)} step={0.01}
-              style={{ border:'none', background:'transparent', fontSize:18, fontWeight:700, color:'#09090B', outline:'none', width:'100%', fontFamily:'inherit', padding:0, minWidth:0 }} />
+              style={{ border:'none', background:'transparent', fontSize:20, fontWeight:700, color:'#09090B', outline:'none', width:'100%', fontFamily:'inherit', padding:0, minWidth:0 }} />
           </div>
-          <div style={{ fontSize:11, color:'#A1A1AA' }}>base para o saldo</div>
+          <div style={{ fontSize:11, color:'#A1A1AA', marginTop:2 }}>base para o saldo</div>
         </div>
 
         {/* KPI cards normais */}
         {kpis.map(k => (
-          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:36, height:36, borderRadius:9, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className={`ti ${k.icon}`} style={{ fontSize:16, color:k.iconColor }} />
+          <div key={k.label} style={{ background:'#FFFFFF', borderRadius:20, border:'1px solid #EAECEF', padding:'18px 20px', display:'flex', alignItems:'center', gap:14, boxShadow:'0 2px 8px rgba(0,0,0,0.03)' }}>
+            <div style={{ width:46, height:46, borderRadius:14, background:k.iconBg, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <i className={`ti ${k.icon}`} style={{ fontSize:21, color:k.iconColor }} />
             </div>
             <div style={{ minWidth:0 }}>
-              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>{k.label}</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'#09090B', lineHeight:1.2 }}>{k.value}</div>
-              <div style={{ fontSize:11, color:'#A1A1AA', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
+              <div style={{ fontSize:11, color:'#71717A', fontWeight:500, marginBottom:3, textTransform:'uppercase', letterSpacing:'.05em', whiteSpace:'nowrap' }}>{k.label}</div>
+              <div style={{ fontSize:20, fontWeight:700, color:'#09090B', lineHeight:1.1 }}>{k.value}</div>
+              <div style={{ fontSize:11, color:'#71717A', marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{k.sub}</div>
             </div>
           </div>
         ))}
 
         {/* Card saldo atual */}
-        <div style={{ background:'#F0FDF4', borderRadius:12, border:'1px solid #BBF7D0', padding:'14px 16px', display:'flex', alignItems:'center', gap:10 }}>
-          <div style={{ width:36, height:36, borderRadius:9, background:'#DCFCE7', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <i className="ti ti-wallet" style={{ fontSize:16, color:'#16A34A' }} />
+        <div style={{ background:'#F0FDF4', borderRadius:20, border:'1px solid #BBF7D0', padding:'18px 20px', display:'flex', alignItems:'center', gap:14, boxShadow:'0 2px 8px rgba(0,0,0,0.03)' }}>
+          <div style={{ width:46, height:46, borderRadius:14, background:'#DCFCE7', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <i className="ti ti-wallet" style={{ fontSize:21, color:'#16A34A' }} />
           </div>
           <div style={{ minWidth:0 }}>
-            <div style={{ fontSize:11, color:'#15803D', fontWeight:500, marginBottom:2, textTransform:'uppercase', letterSpacing:'.04em', whiteSpace:'nowrap' }}>Saldo atual</div>
-            <div style={{ fontSize:16, fontWeight:700, color:'#15803D', lineHeight:1.2 }}>{fmt(saldoMap.total)}</div>
-            <div style={{ fontSize:11, color:'#86EFAC', whiteSpace:'nowrap' }}>calculado</div>
+            <div style={{ fontSize:11, color:'#15803D', fontWeight:500, marginBottom:3, textTransform:'uppercase', letterSpacing:'.05em', whiteSpace:'nowrap' }}>Saldo atual</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'#15803D', lineHeight:1.1 }}>{fmt(saldoMap.total)}</div>
+            <div style={{ fontSize:11, color:'#86EFAC', marginTop:2, whiteSpace:'nowrap' }}>calculado</div>
           </div>
         </div>
       </div>
