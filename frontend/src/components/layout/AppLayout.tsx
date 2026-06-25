@@ -39,8 +39,8 @@ const NAV: NavItem[] = [
     module: 'financial',
     desc: 'Controle de vendas e caixa',
     subItems: [
-      { key: 'vendas',     icon: 'ti-shopping-cart',  label: 'Vendas',                   desc: 'Orçamentos, vendas e recebimentos',   path: '/financial?tab=vendas' },
-      { key: 'contas',     icon: 'ti-file-invoice',   label: 'Lançamentos financeiros',  desc: 'Entradas, saídas e conferência',       path: '/financial?tab=contas' },
+      { key: 'vendas',     icon: 'ti-shopping-cart',  label: 'Orçamentos/Vendas',        desc: 'Orçamentos, vendas e recebimentos',   path: '/financial?tab=vendas' },
+      { key: 'contas',     icon: 'ti-file-invoice',   label: 'Fluxo de Caixa',           desc: 'Entradas, saídas e conferência',       path: '/financial?tab=contas' },
       { key: 'relatorios', icon: 'ti-chart-bar',      label: 'Relatórios',               desc: 'Fluxo de caixa, DRE e indicadores',    path: '/financial?tab=relatorios' },
     ],
   },
