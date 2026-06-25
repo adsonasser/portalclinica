@@ -935,6 +935,7 @@ function DetalhePanel({
   onDivergente,
   onPagarReceber,
   onCancelar,
+  onVerVenda,
 }: {
   conta: Conta;
   onClose: () => void;
@@ -942,6 +943,7 @@ function DetalhePanel({
   onDivergente: () => void;
   onPagarReceber: () => void;
   onCancelar: () => void;
+  onVerVenda?: (saleId: string) => void;
 }) {
   const tp = CONTA_TIPO[conta.tipo];
   const st = CONTA_STATUS[conta.status];
@@ -1009,12 +1011,14 @@ function DetalhePanel({
           {conta.saleId && (
             <div>
               <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:4 }}>Venda vinculada</div>
-              <div style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div onClick={() => onVerVenda?.(conta.saleId!)} style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', cursor: onVerVenda ? 'pointer' : 'default' }}
+                onMouseEnter={e => { if (onVerVenda) (e.currentTarget as HTMLElement).style.background = '#EFF6FF'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <i className="ti ti-receipt" style={{ fontSize:14, color:'#71717A' }} />
                   <span style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>Venda #{String(conta.saleId).slice(-6).toUpperCase()}</span>
                 </div>
-                <i className="ti ti-external-link" style={{ fontSize:13, color:'#A1A1AA' }} />
+                <i className="ti ti-external-link" style={{ fontSize:13, color:'#2563EB' }} />
               </div>
             </div>
           )}
@@ -1045,7 +1049,7 @@ function DetalhePanel({
               {isPaid && conta.statusConferencia === 'PENDENTE' && (
                 <div style={{ display:'flex', gap:8, marginTop:12 }}>
                   <button onClick={onConferir} style={{ flex:1, height:34, background:'#16A34A', border:'none', borderRadius:8, fontSize:12, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-                    <i className="ti ti-circle-check" style={{ fontSize:13 }} /> Marcar como conferido
+                    <i className="ti ti-circle-check" style={{ fontSize:13 }} /> Marcar como pago
                   </button>
                   <button onClick={onDivergente} style={{ height:34, padding:'0 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, fontSize:12, fontWeight:600, color:'#DC2626', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
                     <i className="ti ti-alert-triangle" style={{ fontSize:13 }} /> Divergente
@@ -1509,7 +1513,7 @@ function ContaContextMenu({ conta, onAction, onClose }: {
 
   if (isPaid) {
     if (conf !== 'CONFERIDO') {
-      items.push({ action:'conferir',   label:'Marcar como conferido',                              icon:'ti-circle-check' });
+      items.push({ action:'conferir',   label:'Marcar como pago',                                   icon:'ti-circle-check' });
     }
     items.push({ action:'divergente', label: conf === 'DIVERGENTE' ? 'Atualizar motivo' : 'Marcar como divergente', icon:'ti-alert-triangle' });
   }
@@ -1826,15 +1830,24 @@ function CancelSaleModal({ sale, onClose, onConfirm, loading }: {
 const STATUS_SELECT_ICON = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`;
 
 function VendasTab({ sales }: { sales: Sale[] }) {
-  const qc        = useQueryClient();
-  const { toast } = useToast();
-  const navigate  = useNavigate();
+  const qc              = useQueryClient();
+  const { toast }       = useToast();
+  const navigate        = useNavigate();
+  const [searchParams]  = useSearchParams();
 
   const [statusFilter,  setStatusFilter]  = useState('todos');
   const [search,        setSearch]        = useState('');
   const [showNova,      setShowNova]      = useState(false);
   const [receberSale,   setReceberSale]   = useState<Sale | null>(null);
   const [detailSale,    setDetailSale]    = useState<Sale | null>(null);
+
+  useEffect(() => {
+    const saleId = searchParams.get('saleId');
+    if (saleId && sales.length > 0) {
+      const found = sales.find(s => s.id === saleId);
+      if (found) { setDetailSale(found); navigate('/financial?tab=vendas', { replace: true }); }
+    }
+  }, [searchParams, sales]);
   const [cancelSale,    setCancelSale]    = useState<Sale | null>(null);
   const [period,        setPeriod]        = useState<PeriodKey>('this_month');
   const [customStart,   setCustomStart]   = useState('');
@@ -2251,6 +2264,19 @@ function ContasTab() {
   const [vencimentoConta,   setVencimentoConta]   = useState<Conta | null>(null);
   const [openMenuId,        setOpenMenuId]        = useState<string | null>(null);
 
+  const qc       = useQueryClient();
+  const navigate = useNavigate();
+
+  const marcarPagoMut = useMutation({
+    mutationFn: (id: string) => financialApi.updateTransaction(id, {
+      statusConferencia:  'CONFERIDO',
+      dataConferencia:    new Date().toISOString(),
+      usuarioConferencia: currentUserName(),
+      motivoDivergencia:  null,
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
+  });
+
   const { data: rawTxs = [], isLoading } = useQuery<any[]>({
     queryKey: ['transactions'],
     queryFn:  () => financialApi.transactions(),
@@ -2332,7 +2358,7 @@ function ContasTab() {
     else if (action === 'divergente')          setDivergenteConta(conta);
     else if (action === 'cancelar')            setCancelarConta(conta);
     else if (action === 'alterar_vencimento')  setVencimentoConta(conta);
-    else if (action === 'ver_venda')           setDetalhe(conta);
+    else if (action === 'ver_venda')           { setDetalhe(null); navigate(`/financial?tab=vendas&saleId=${conta.saleId}`); }
   };
 
   const activeFilterLabel = CONTA_FILTER_TABS.find(t => t.key === tab)?.label || 'Todos';
@@ -2503,9 +2529,9 @@ function ContasTab() {
                 let actionBtn;
                 if (isPaid && c.statusConferencia === 'PENDENTE') {
                   actionBtn = (
-                    <button onClick={() => setConfirmarConf(c)}
-                      style={{ height:28, padding:'0 10px', background:'#16A34A', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:4, whiteSpace:'nowrap' }}>
-                      <i className="ti ti-circle-check" style={{ fontSize:11 }} /> Conferir
+                    <button onClick={() => marcarPagoMut.mutate(c.id)} disabled={marcarPagoMut.isPending}
+                      style={{ height:28, padding:'0 10px', background:'#16A34A', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:4, whiteSpace:'nowrap', opacity: marcarPagoMut.isPending ? 0.6 : 1 }}>
+                      <i className="ti ti-circle-check" style={{ fontSize:11 }} /> Marcar como pago
                     </button>
                   );
                 } else if (isPaid && c.statusConferencia === 'DIVERGENTE') {
@@ -2638,10 +2664,11 @@ function ContasTab() {
         <DetalhePanel
           conta={detalhe}
           onClose={() => setDetalhe(null)}
-          onConferir={() => { setDetalhe(null); setConfirmarConf(detalhe); }}
+          onConferir={() => { setDetalhe(null); marcarPagoMut.mutate(detalhe!.id); }}
           onDivergente={() => { setDetalhe(null); setDivergenteConta(detalhe); }}
           onPagarReceber={() => { setDetalhe(null); setPagarReceberConta(detalhe); }}
           onCancelar={() => { setDetalhe(null); setCancelarConta(detalhe); }}
+          onVerVenda={saleId => { setDetalhe(null); navigate(`/financial?tab=vendas&saleId=${saleId}`); }}
         />
       )}
 
