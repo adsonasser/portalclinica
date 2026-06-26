@@ -8,7 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { TableActions } from '../../components/ui/TableActions';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
-import { TableLoader } from '../../components/ui/Loader';
+import { SectionLoader } from '../../components/ui/Loader';
 import { calcPatientScore, scoreBadge } from '../../utils/patientScore';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
@@ -233,6 +233,7 @@ export function PatientsPage() {
         </div>
 
         {/* Tabela */}
+        {isLoading && <SectionLoader />}
         <div style={{ background: '#FFFFFF', borderRadius: 20, border: '1px solid #EAECEF', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -243,9 +244,7 @@ export function PatientsPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading ? (
-                <TableLoader colSpan={7} />
-              ) : patients.length === 0 ? (
+              {patients.length === 0 ? (
                 <tr><td colSpan={7} style={{ padding: 48, textAlign: 'center' }}>
                   <i className="ti ti-users" style={{ fontSize: 36, display: 'block', margin: '0 auto 10px', color: '#D4D4D8' }} />
                   <div style={{ fontSize: 14, fontWeight: 500, color: '#71717A' }}>Nenhum contato encontrado</div>

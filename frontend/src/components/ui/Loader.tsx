@@ -102,15 +102,16 @@ export function SectionLoader({ label, size = 'md', style }: SectionLoaderProps)
   return <GlassOverlay gifSize={200} />;
 }
 
-// ── TableLoader — linha de tbody durante fetch ────────────────────────────────
+// ── TableLoader — fullscreen glass overlay durante fetch de tabela ────────────
 
 interface TableLoaderProps { colSpan?: number; label?: string; }
 
-export function TableLoader({ colSpan = 10, label }: TableLoaderProps) {
+export function TableLoader({ colSpan = 10 }: TableLoaderProps) {
+  injectKeyframes();
   return (
     <tr>
-      <td colSpan={colSpan} style={{ padding: 0, border: 'none' }}>
-        <SectionLoader label={label} size="sm" style={{ padding: '40px 16px' }} />
+      <td colSpan={colSpan} style={{ padding: 0, border: 'none', height: 0 }}>
+        <GlassOverlay gifSize={200} />
       </td>
     </tr>
   );

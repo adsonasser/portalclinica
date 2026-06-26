@@ -271,7 +271,7 @@ function FinanceiroTab({ patient }: { patient: any }) {
 
       {/* Tabela */}
       {isLoading ? (
-        <SectionLoader size="sm" />
+        <SectionLoader />
       ) : filteredSales.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <div style={{ width: 48, height: 48, borderRadius: 12, background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
