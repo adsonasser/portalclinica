@@ -23,18 +23,19 @@ import { PatientsPage } from './pages/patients/PatientsPage'
 import { PatientDetailPage } from './pages/patients/PatientDetailPage'
 import { AgendaPage } from './pages/agenda/AgendaPage'
 import { FinancialPage } from './pages/financial/FinancialPage'
-import { CRMFunnelsPage } from './pages/crm/CRMFunnelsPage'
-import { CRMFunnelDetailPage } from './pages/crm/CRMFunnelDetailPage'
-import { CRMTasksPage } from './pages/crm/CRMTasksPage'
+import { CRMPage } from './pages/crm/CRMPage'
+import { CRMLeadsPage } from './pages/crm/CRMLeadsPage'
+import { TasksPage } from './pages/tasks/TasksPage'
 import { PlansPage } from './pages/plans/PlansPage'
 import { SessionsPage } from './pages/sessions/SessionsPage'
 import { EstoquePage } from './pages/estoque/EstoquePage'
 import { MessagesPage } from './pages/messages/MessagesPage'
-import { OpportunitiesPage } from './pages/opportunities/OpportunitiesPage'
 import { SettingsPage } from './pages/settings/SettingsPage'
 import { ProceduresPage } from './pages/settings/ProceduresPage'
 import { ContratosPage } from './pages/contratos/ContratosPage'
 import { ProntuarioPage } from './pages/prontuario/ProntuarioPage'
+import { InicioPage } from './pages/inicio/InicioPage'
+import { ReceitaInteligentePage } from './pages/receita-inteligente/ReceitaInteligentePage'
 
 function NoPermission() {
   return (
@@ -86,27 +87,30 @@ export default function App() {
         {/* ── App ── */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<AuthGuard><PermissionsProvider><AppLayout /></PermissionsProvider></AuthGuard>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route index element={<Navigate to="/inicio" replace />} />
+          <Route path="inicio"      element={<InicioPage />} />
           <Route path="dashboard"   element={<RequirePermission module="dashboard"><DashboardPage /></RequirePermission>} />
           <Route path="patients"    element={<RequirePermission module="contacts"><PatientsPage /></RequirePermission>} />
           <Route path="patients/:id" element={<RequirePermission module="contacts"><PatientDetailPage /></RequirePermission>} />
           <Route path="agenda"      element={<RequirePermission module="agenda"><AgendaPage /></RequirePermission>} />
           <Route path="financial"   element={<RequirePermission module="financial"><FinancialPage /></RequirePermission>} />
-          <Route path="crm"         element={<Navigate to="/oportunidades" replace />} />
-          <Route path="crm/funis"   element={<RequirePermission module="opportunities"><CRMFunnelsPage /></RequirePermission>} />
-          <Route path="crm/funis/:id" element={<RequirePermission module="opportunities"><CRMFunnelDetailPage /></RequirePermission>} />
-          <Route path="crm/tarefas" element={<RequirePermission module="opportunities"><CRMTasksPage /></RequirePermission>} />
+          <Route path="crm"             element={<RequirePermission module="opportunities"><CRMPage /></RequirePermission>} />
+          <Route path="crm/leads"       element={<RequirePermission module="opportunities"><CRMLeadsPage /></RequirePermission>} />
+          <Route path="crm/importacoes" element={<RequirePermission module="opportunities"><CRMPage /></RequirePermission>} />
+          <Route path="crm/perdidos"    element={<RequirePermission module="opportunities"><CRMLeadsPage /></RequirePermission>} />
+          <Route path="receita-inteligente" element={<ReceitaInteligentePage />} />
+          <Route path="tarefas"         element={<RequirePermission module="tasks"><TasksPage /></RequirePermission>} />
+          <Route path="oportunidades"   element={<Navigate to="/crm" replace />} />
           <Route path="plans"       element={<PlansPage />} />
           <Route path="sessions"    element={<RequirePermission module="sessions"><SessionsPage /></RequirePermission>} />
           <Route path="estoque"     element={<RequirePermission module="inventory"><EstoquePage /></RequirePermission>} />
           <Route path="messages"    element={<RequirePermission module="messages"><MessagesPage /></RequirePermission>} />
-          <Route path="oportunidades" element={<RequirePermission module="opportunities"><OpportunitiesPage /></RequirePermission>} />
           <Route path="settings"    element={<RequirePermission module="settings"><SettingsPage /></RequirePermission>} />
           <Route path="settings/procedures" element={<RequirePermission module="settings"><ProceduresPage /></RequirePermission>} />
           <Route path="contratos"   element={<RequirePermission module="contracts"><ContratosPage /></RequirePermission>} />
           <Route path="prontuario/:patientId" element={<RequirePermission module="medicalRecords"><ProntuarioPage /></RequirePermission>} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/inicio" replace />} />
       </Routes>
     </NavigationGuardProvider>
     </BrowserRouter>

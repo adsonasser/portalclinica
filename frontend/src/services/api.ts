@@ -37,6 +37,8 @@ export const authApi = {
 export const dashboardApi = {
   stats: () => api.get('/dashboard').then((r) => r.data),
   chart: (months = 6) => api.get(`/dashboard/chart?months=${months}`).then((r) => r.data),
+  dashboard360: (params?: { period?: string; professionalId?: string }) =>
+    api.get('/dashboard/360', { params }).then((r) => r.data),
 };
 
 // ─── Patients ────────────────────────────────────────────────────────────────
@@ -147,7 +149,25 @@ export const leadsApi = {
   update: (id: string, data: any) => api.patch(`/leads/${id}`, data).then((r) => r.data),
   move: (id: string, stageId: string, stageOrder: number) =>
     api.patch(`/leads/${id}/move`, { stageId, stageOrder }).then((r) => r.data),
+  moveStage: (id: string, stageId: string, stageOrder: number) =>
+    api.patch(`/leads/${id}/move`, { stageId, stageOrder }).then((r) => r.data),
   remove: (id: string) => api.delete(`/leads/${id}`).then((r) => r.data),
+  updateFunnel: (id: string, data: any) => api.patch(`/leads/funnels/${id}`, data).then(r => r.data),
+  deleteFunnel: (id: string) => api.delete(`/leads/funnels/${id}`).then(r => r.data),
+  createStage: (funnelId: string, data: any) => api.post(`/leads/funnels/${funnelId}/stages`, data).then(r => r.data),
+  updateStage: (stageId: string, data: any) => api.patch(`/leads/funnels/stages/${stageId}`, data).then(r => r.data),
+  deleteStage: (stageId: string) => api.delete(`/leads/funnels/stages/${stageId}`).then(r => r.data),
+  sources: () => api.get('/leads/sources').then(r => r.data),
+  createSource: (data: any) => api.post('/leads/sources', data).then(r => r.data),
+  lossReasons: () => api.get('/leads/loss-reasons').then(r => r.data),
+  createLossReason: (data: any) => api.post('/leads/loss-reasons', data).then(r => r.data),
+  convert: (id: string) => api.post(`/leads/${id}/convert`).then(r => r.data),
+  markLost: (id: string, lostReason: string) => api.post(`/leads/${id}/mark-lost`, { lostReason }).then(r => r.data),
+  markWon: (id: string) => api.post(`/leads/${id}/mark-won`).then(r => r.data),
+  changeFunnel: (id: string, funnelId: string, stageId: string) => api.patch(`/leads/${id}`, { funnelId, stageId, stageOrder: 0 }).then(r => r.data),
+  getHistory: (id: string) => api.get(`/leads/${id}/history`).then(r => r.data),
+  addActivity: (id: string, data: any) => api.post(`/leads/${id}/activities`, data).then(r => r.data),
+  importLeads: (leads: any[]) => api.post('/leads/import', { leads }).then(r => r.data),
 };
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
@@ -158,6 +178,11 @@ export const tasksApi = {
   create: (data: any) => api.post('/tasks', data).then((r) => r.data),
   update: (id: string, data: any) => api.patch(`/tasks/${id}`, data).then((r) => r.data),
   remove: (id: string) => api.delete(`/tasks/${id}`).then((r) => r.data),
+  stats: () => api.get('/tasks/stats').then(r => r.data),
+  postIts: () => api.get('/tasks/post-its').then(r => r.data),
+  createPostIt: (data: any) => api.post('/tasks/post-its', data).then(r => r.data),
+  updatePostIt: (id: string, data: any) => api.patch(`/tasks/post-its/${id}`, data).then(r => r.data),
+  deletePostIt: (id: string) => api.delete(`/tasks/post-its/${id}`).then(r => r.data),
 };
 
 // ─── Inventory ───────────────────────────────────────────────────────────────
@@ -338,4 +363,25 @@ export const quickRepliesApi = {
 
 export const searchApi = {
   search: (q: string) => api.get('/search', { params: { q } }).then((r) => r.data),
+};
+
+// ─── Home ─────────────────────────────────────────────────────────────────────
+
+export const homeApi = {
+  summary: () => api.get('/home/summary').then((r) => r.data),
+};
+
+// ─── Revenue Intelligence ─────────────────────────────────────────────────────
+
+export const revenueApi = {
+  summary: () => api.get('/revenue-intelligence/summary').then((r) => r.data),
+};
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+export const settingsApi = {
+  getOverview:      () => api.get('/settings/overview').then((r) => r.data),
+  update:           (data: any) => api.patch('/settings', data).then((r) => r.data),
+  getClinicInfo:    () => api.get('/settings/clinic-info').then((r) => r.data),
+  updateClinicInfo: (data: any) => api.patch('/settings/clinic-info', data).then((r) => r.data),
 };

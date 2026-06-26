@@ -261,8 +261,8 @@ function ProductDrawer({ product, categories, suppliers, onClose, onSaved }: {
 
   return (
     <Portal>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 10002, display: 'flex', justifyContent: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div style={{ width: 460, background: '#FFFFFF', height: '100%', overflowY: 'auto', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 10003, display: 'flex', flexDirection: 'column', animation: 'slideIn .2s ease' }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ width: 460, background: '#FFFFFF', height: '100%', overflowY: 'auto', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 1001, display: 'flex', flexDirection: 'column', animation: 'slideIn .2s ease' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>{isEdit ? 'Editar produto' : 'Novo produto'}</div>
@@ -398,8 +398,8 @@ function MovementDrawer({ productId: initProductId = '', forceType, products, on
 
   return (
     <Portal>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 10002, display: 'flex', justifyContent: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div style={{ width: 420, background: '#FFFFFF', height: '100%', overflowY: 'auto', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 10003, display: 'flex', flexDirection: 'column', animation: 'slideIn .2s ease' }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 1000, display: 'flex', justifyContent: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ width: 420, background: '#FFFFFF', height: '100%', overflowY: 'auto', boxShadow: '-4px 0 24px rgba(0,0,0,0.12)', zIndex: 1001, display: 'flex', flexDirection: 'column', animation: 'slideIn .2s ease' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>Registrar movimento</div>

@@ -15,7 +15,7 @@ export class UsersService {
         avatarUrl: true, active: true, lastLoginAt: true, createdAt: true,
         accessProfileId: true,
         accessProfile: { select: { id: true, name: true } },
-        professional: { select: { id: true, active: true, showInAgenda: true, color: true } },
+        professional: { select: { id: true, active: true, showInAgenda: true, color: true, specialty: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -25,16 +25,33 @@ export class UsersService {
     const exists = await this.prisma.user.findFirst({ where: { clinicId, email: dto.email } });
     if (exists) throw new ConflictException('E-mail já cadastrado nesta clínica');
 
-    const hashed = await bcrypt.hash(dto.password, 10);
-    return this.prisma.user.create({
-      data: { ...dto, password: hashed, clinicId },
+    const { isProfessional, showInAgenda, profColor, specialty, ...userFields } = dto;
+    const hashed = await bcrypt.hash(userFields.password, 10);
+
+    const user = await this.prisma.user.create({
+      data: { ...userFields, password: hashed, clinicId },
       select: { id: true, name: true, email: true, role: true, phone: true, active: true, createdAt: true },
     });
+
+    if (isProfessional) {
+      await this.prisma.professional.create({
+        data: {
+          clinicId,
+          userId: user.id,
+          active: true,
+          showInAgenda: showInAgenda ?? true,
+          ...(profColor ? { color: profColor } : {}),
+          ...(specialty ? { specialty } : {}),
+        },
+      });
+    }
+
+    return user;
   }
 
   async update(clinicId: string, id: string, rawData: any) {
     await this.findOne(clinicId, id);
-    const { isProfessional, showInAgenda, profColor, ...data } = rawData;
+    const { isProfessional, showInAgenda, profColor, specialty, ...data } = rawData;
     if (data.password) data.password = await bcrypt.hash(data.password, 10);
 
     const user = await this.prisma.user.update({
@@ -53,11 +70,12 @@ export class UsersService {
               active: true,
               ...(showInAgenda !== undefined ? { showInAgenda } : {}),
               ...(profColor ? { color: profColor } : {}),
+              ...(specialty !== undefined ? { specialty } : {}),
             },
           });
         } else {
           await this.prisma.professional.create({
-            data: { clinicId, userId: id, active: true, showInAgenda: showInAgenda ?? true, ...(profColor ? { color: profColor } : {}) },
+            data: { clinicId, userId: id, active: true, showInAgenda: showInAgenda ?? true, ...(profColor ? { color: profColor } : {}), ...(specialty ? { specialty } : {}) },
           });
         }
       } else if (existing) {
@@ -71,6 +89,7 @@ export class UsersService {
           data: {
             ...(showInAgenda !== undefined ? { showInAgenda } : {}),
             ...(profColor ? { color: profColor } : {}),
+            ...(specialty !== undefined ? { specialty } : {}),
           },
         });
       }

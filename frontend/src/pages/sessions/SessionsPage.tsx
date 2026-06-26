@@ -673,8 +673,8 @@ function PackageDetailDrawer({ pacote, onClose, onAgendar, onFinalizar }: {
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.35)', zIndex:300, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'min(92vw,900px)', background:'#FFFFFF', zIndex:301, display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", boxShadow:'-8px 0 40px rgba(0,0,0,.13)', animation:'slideIn .2s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.35)', zIndex:1000, backdropFilter:'blur(2px)' }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:'min(92vw,900px)', background:'#FFFFFF', zIndex:1001, display:'flex', flexDirection:'column', fontFamily:"'Inter',system-ui,sans-serif", boxShadow:'-8px 0 40px rgba(0,0,0,.13)', animation:'slideIn .2s ease' }}>
 
         <div style={{ flexShrink:0, background:'#FFFFFF', borderBottom:'1px solid #F1F3F5', padding:'20px 24px', display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
           <div>

@@ -94,8 +94,8 @@ function ContractPrintPreview({ contract, onClose, onPrinted }: { contract: any;
 
   return (
     <Portal>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 959 }} />
-      <div style={{ position: 'fixed', inset: '16px', borderRadius: 20, background: '#EAECEF', zIndex: 960, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 1000 }} />
+      <div style={{ position: 'fixed', inset: '16px', borderRadius: 20, background: '#EAECEF', zIndex: 1001, display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.35)', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
         {/* Topbar */}
         <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E4E4E7', padding: '11px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -814,9 +814,9 @@ export function ContratosPage() {
             </button>
           )}
           <div style={{ flex: 1 }} />
-          <button onClick={() => navigate('/settings?section=contratos')}
+          <button onClick={() => navigate('/settings?section=contracts&sub=contract-templates')}
             style={{ height: 36, padding: '0 16px', background: '#FFFFFF', border: '1px solid #000', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#000', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <i className="ti ti-settings" style={{ fontSize: 13 }} /> Modelos
+            <i className="ti ti-template" style={{ fontSize: 13 }} /> Modelos
           </button>
           <button onClick={() => setNewDrawerOpen(true)}
             style={{ height: 36, padding: '0 18px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -842,7 +842,7 @@ export function ContratosPage() {
                   style={{ height: 36, padding: '0 18px', background: '#000', border: 'none', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo contrato
                 </button>
-                <button onClick={() => navigate('/settings?section=contratos')}
+                <button onClick={() => navigate('/settings?section=contracts&sub=contract-templates')}
                   style={{ height: 36, padding: '0 16px', background: '#FFFFFF', border: '1px solid #000', borderRadius: 20, fontSize: 13, fontWeight: 500, color: '#000', cursor: 'pointer', fontFamily: 'inherit' }}>
                   Configurar modelos
                 </button>

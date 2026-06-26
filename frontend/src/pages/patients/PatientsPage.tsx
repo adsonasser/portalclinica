@@ -587,8 +587,8 @@ export function PatientsPage() {
       {deleteConfirmId && (
         <Portal>
           <>
-          <div onClick={() => setDeleteConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 300, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 301, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <div onClick={() => setDeleteConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1001, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
               <i className="ti ti-trash" style={{ fontSize: 20, color: '#DC2626' }} />
             </div>
@@ -619,8 +619,8 @@ export function PatientsPage() {
       {inactivateConfirmId && (
         <Portal>
           <>
-          <div onClick={() => setInactivateConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 300, backdropFilter: 'blur(2px)' }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 301, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <div onClick={() => setInactivateConfirmId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1001, width: 400, background: '#FFFFFF', borderRadius: 14, boxShadow: '0 20px 60px rgba(0,0,0,.15)', padding: '28px 28px 22px', fontFamily: "'Inter', system-ui, sans-serif" }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
               <i className="ti ti-user-off" style={{ fontSize: 20, color: '#D97706' }} />
             </div>

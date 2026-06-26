@@ -6,7 +6,14 @@ const TransactionType = $Enums.TransactionType;
 const TX_INCLUDE = {
   category: true,
   paymentMethod: true,
-  sale: { include: { patient: { select: { id: true, name: true, phone: true } }, items: { take: 1 } } },
+  recurrence: { select: { id: true, frequency: true, occurrences: true, startDate: true, endDate: true } },
+  sale: {
+    include: {
+      patient:  { select: { id: true, name: true, phone: true } },
+      items:    { include: { plan: true } },
+      sessions: { select: { id: true, sessionStatus: true, attended: true } },
+    },
+  },
 };
 
 @Injectable()
@@ -35,17 +42,126 @@ export class FinancialService {
   async createTransaction(clinicId: string, data: any) {
     const amount = parseFloat(data.amount);
     if (!isFinite(amount) || amount <= 0) throw new BadRequestException('Informe um valor válido.');
-    return this.prisma.financialTransaction.create({
-      data: { ...data, clinicId, amount },
-      include: TX_INCLUDE,
+
+    if (data.recurrence) {
+      return this._createRecurring(clinicId, data, amount);
+    }
+
+    const txData = this._buildTxData(clinicId, data, amount);
+    return this.prisma.financialTransaction.create({ data: txData, include: TX_INCLUDE });
+  }
+
+  private _buildTxData(clinicId: string, data: any, amount: number) {
+    return {
+      clinicId,
+      amount,
+      type:            data.type,
+      status:          data.status ?? 'PENDING',
+      description:     data.description,
+      contactName:     data.contactName   || null,
+      notes:           data.notes         || null,
+      categoryId:      data.categoryId    || null,
+      paymentMethodId: data.paymentMethodId || null,
+      saleId:          data.saleId        || null,
+      dueDate:         data.dueDate ? new Date(data.dueDate) : null,
+      paidAt:          data.paidAt  ? new Date(data.paidAt)  : null,
+    };
+  }
+
+  private _addFrequency(date: Date, freq: string): Date {
+    const d = new Date(date);
+    switch (freq) {
+      case 'SEMANAL':     d.setDate(d.getDate() + 7);   break;
+      case 'QUINZENAL':   d.setDate(d.getDate() + 15);  break;
+      case 'MENSAL':      d.setMonth(d.getMonth() + 1); break;
+      case 'BIMESTRAL':   d.setMonth(d.getMonth() + 2); break;
+      case 'TRIMESTRAL':  d.setMonth(d.getMonth() + 3); break;
+      case 'SEMESTRAL':   d.setMonth(d.getMonth() + 6); break;
+      case 'ANUAL':       d.setFullYear(d.getFullYear() + 1); break;
+    }
+    return d;
+  }
+
+  private _buildOccurrenceDates(startDate: Date, freq: string, mode: 'count' | 'until', count?: number, until?: Date): Date[] {
+    const dates: Date[] = [];
+    let current = new Date(startDate);
+
+    if (mode === 'count') {
+      const n = Math.min(Math.max(count ?? 2, 2), 120);
+      for (let i = 0; i < n; i++) {
+        dates.push(new Date(current));
+        current = this._addFrequency(current, freq);
+      }
+    } else {
+      const limit = until!;
+      let iterations = 0;
+      while (current <= limit && iterations < 120) {
+        dates.push(new Date(current));
+        current = this._addFrequency(current, freq);
+        iterations++;
+      }
+      if (dates.length < 2) throw new BadRequestException('Recorrência deve gerar pelo menos 2 lançamentos.');
+    }
+
+    return dates;
+  }
+
+  private async _createRecurring(clinicId: string, data: any, amount: number) {
+    const rec = data.recurrence as {
+      frequency: string;
+      mode: 'count' | 'until';
+      count?: number;
+      until?: string;
+    };
+
+    if (!rec.frequency) throw new BadRequestException('Frequência obrigatória para recorrência.');
+
+    const startDate = data.dueDate ? new Date(data.dueDate) : new Date();
+    const until     = rec.mode === 'until' && rec.until ? new Date(rec.until) : undefined;
+    const dates     = this._buildOccurrenceDates(startDate, rec.frequency, rec.mode, rec.count, until);
+    const total     = dates.length;
+
+    return this.prisma.$transaction(async (p) => {
+      const recurrence = await p.financialRecurrence.create({
+        data: {
+          clinicId,
+          type:        data.type,
+          description: data.description,
+          amount,
+          frequency:   rec.frequency,
+          startDate,
+          endDate:     until ?? dates[dates.length - 1],
+          occurrences: total,
+        },
+      });
+
+      const created = await Promise.all(
+        dates.map((dueDate, idx) =>
+          p.financialTransaction.create({
+            data: {
+              ...this._buildTxData(clinicId, data, amount),
+              dueDate,
+              recurrenceId:    recurrence.id,
+              recurrenceIndex: idx + 1,
+              recurrenceTotal: total,
+            },
+            include: TX_INCLUDE,
+          }),
+        ),
+      );
+
+      return { recurrence, transactions: created };
     });
   }
 
   async updateTransaction(clinicId: string, id: string, data: any) {
     await this.findTransactionOne(clinicId, id);
+    const update: any = { ...data };
+    if (update.dueDate !== undefined) update.dueDate = update.dueDate ? new Date(update.dueDate) : null;
+    if (update.paidAt  !== undefined) update.paidAt  = update.paidAt  ? new Date(update.paidAt)  : null;
     return this.prisma.financialTransaction.update({
       where: { id },
-      data,
+      data: update,
       include: TX_INCLUDE,
     });
   }

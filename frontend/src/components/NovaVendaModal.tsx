@@ -1,30 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { patientsApi, plansApi, financialApi, salesApi } from '../services/api';
+import { Portal } from './ui/Portal';
 
-const uid = () => Math.random().toString(36).slice(2);
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+const uid = () => Math.random().toString(36).slice(2, 9);
 const todayIso = () => new Date().toISOString().slice(0, 10);
-
-type ItemRow = {
-  key: string;
-  planId: string;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  discount: number;
-  total: number;
-  sessionsTotal: number;
-};
-
-type PaymentRow = {
-  key: string;
-  amount: string;
-  paymentMethodId: string;
-  paymentDate: string;
-};
-
-const fmt = (v: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
 const inp: React.CSSProperties = {
   width: '100%', height: 36, padding: '0 10px',
@@ -32,19 +15,101 @@ const inp: React.CSSProperties = {
   fontSize: 13, color: '#09090B', background: '#FFFFFF',
   outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
 };
-
 const lbl: React.CSSProperties = {
   display: 'block', fontSize: 12, fontWeight: 500,
   color: '#374151', marginBottom: 5,
 };
 
+type ItemRow = {
+  key: string; planId: string; name: string;
+  quantity: number; unitPrice: number; discount: number;
+  total: number; sessionsTotal: number;
+};
+
+type NegType = 'none' | 'partial' | 'full';
+
+type PmtRow = {
+  key: string; amount: string; paymentMethodId: string; paymentDate: string;
+};
+
+type InstGroup = {
+  key: string;
+  paymentMethodId: string;
+  amount: string;
+  count: number;
+  firstDueDate: string;
+  frequency: string;
+  receivedNow: boolean;
+};
+
+type ComputedInstallment = {
+  amount: number;
+  paymentMethodId: string | null;
+  dueDate: string;
+  receivedNow: boolean;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function makeItem(): ItemRow {
   return { key: uid(), planId: '', name: '', quantity: 1, unitPrice: 0, discount: 0, total: 0, sessionsTotal: 0 };
 }
-
-function makePayment(): PaymentRow {
+function makePmtRow(): PmtRow {
   return { key: uid(), amount: '', paymentMethodId: '', paymentDate: todayIso() };
 }
+function makeInstGroup(): InstGroup {
+  return { key: uid(), paymentMethodId: '', amount: '', count: 1, firstDueDate: todayIso(), frequency: 'MENSAL', receivedNow: false };
+}
+
+const FREQ_OPTS = [
+  { value: 'SEMANAL',    label: 'Semanal (7 dias)' },
+  { value: 'QUINZENAL',  label: 'Quinzenal (15 dias)' },
+  { value: 'MENSAL',     label: 'Mensal' },
+  { value: 'BIMESTRAL',  label: 'Bimestral' },
+  { value: 'TRIMESTRAL', label: 'Trimestral' },
+];
+
+function addFreqDate(date: Date, freq: string): Date {
+  const d = new Date(date);
+  switch (freq) {
+    case 'SEMANAL':    d.setDate(d.getDate() + 7);   break;
+    case 'QUINZENAL':  d.setDate(d.getDate() + 15);  break;
+    case 'BIMESTRAL':  d.setMonth(d.getMonth() + 2); break;
+    case 'TRIMESTRAL': d.setMonth(d.getMonth() + 3); break;
+    default:           d.setMonth(d.getMonth() + 1); break; // MENSAL
+  }
+  return d;
+}
+
+function buildInstallments(groups: InstGroup[]): ComputedInstallment[] {
+  const result: ComputedInstallment[] = [];
+  for (const g of groups) {
+    const total = parseFloat(g.amount) || 0;
+    if (total <= 0) continue;
+    const count   = Math.max(1, g.count);
+    const perInst = Math.round((total / count) * 100) / 100;
+    let date = g.firstDueDate
+      ? new Date(g.firstDueDate + 'T12:00:00')
+      : new Date();
+
+    for (let i = 0; i < count; i++) {
+      const isLast = i === count - 1;
+      const amt    = isLast
+        ? Math.round((total - perInst * (count - 1)) * 100) / 100
+        : perInst;
+      result.push({
+        amount: amt,
+        paymentMethodId: g.paymentMethodId || null,
+        dueDate: date.toISOString().slice(0, 10),
+        receivedNow: g.receivedNow,
+      });
+      date = addFreqDate(date, g.frequency);
+    }
+  }
+  return result;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
   onClose: () => void;
@@ -54,77 +119,91 @@ interface Props {
 }
 
 export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefilledPatientName }: Props) {
-  const [patientSearch, setPatientSearch]         = useState('');
-  const [patientResults, setPatientResults]       = useState<any[]>([]);
-  const [showPatientDrop, setShowPatientDrop]     = useState(false);
-  const [selectedPatientId, setSelectedPatientId] = useState(prefilledPatientId || '');
+  // ── Patient ──────────────────────────────────────────────────────────────────
+  const [patientSearch,      setPatientSearch]      = useState('');
+  const [patientResults,     setPatientResults]     = useState<any[]>([]);
+  const [showPatientDrop,    setShowPatientDrop]    = useState(false);
+  const [selectedPatientId,  setSelectedPatientId]  = useState(prefilledPatientId || '');
   const [selectedPatientName, setSelectedPatientName] = useState(prefilledPatientName || '');
 
-  const [items, setItems]       = useState<ItemRow[]>([makeItem()]);
-  const [notes, setNotes]       = useState('');
-  const [payMode, setPayMode]   = useState<'none' | 'total' | 'partial'>('none');
-  const [payments, setPayments] = useState<PaymentRow[]>([makePayment()]);
-  const [remainMode, setRemainMode] = useState<'parcela_unica' | 'parcelar' | 'em_aberto' | null>(null);
+  // ── Items ────────────────────────────────────────────────────────────────────
+  const [items,       setItems]       = useState<ItemRow[]>([makeItem()]);
+  const [notes,       setNotes]       = useState('');
   const [genSessions, setGenSessions] = useState(true);
-  const [error, setError] = useState('');
+  const [error,       setError]       = useState('');
 
-  const { data: plans = [] } = useQuery({ queryKey: ['plans'], queryFn: () => plansApi.list() });
+  // ── Negociação ───────────────────────────────────────────────────────────────
+  const [negType,     setNegType]     = useState<NegType>('none');
+  const [paymentsNow, setPaymentsNow] = useState<PmtRow[]>([makePmtRow()]);
+  const [instGroups,  setInstGroups]  = useState<InstGroup[]>([makeInstGroup()]);
+
+  const { data: plans = [] }          = useQuery({ queryKey: ['plans'],           queryFn: () => plansApi.list() });
   const { data: paymentMethods = [] } = useQuery({ queryKey: ['payment-methods'], queryFn: () => financialApi.paymentMethods() });
 
-  // Patient search with 300ms debounce
+  // ── Computed ─────────────────────────────────────────────────────────────────
+  const subtotal      = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+  const totalDiscount = items.reduce((s, i) => s + i.discount, 0);
+  const total         = items.reduce((s, i) => s + i.total, 0);
+  const hasSessionItems = items.some(i => i.sessionsTotal > 0 && i.planId);
+
+  const computedInstallments = useMemo(() => buildInstallments(instGroups), [instGroups]);
+
+  const totalPaidNow = negType === 'partial'
+    ? paymentsNow.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+    : negType === 'full'
+    ? computedInstallments.filter(i => i.receivedNow).reduce((s, i) => s + i.amount, 0)
+    : 0;
+
+  const totalInstGroups = instGroups.reduce((s, g) => s + (parseFloat(g.amount) || 0), 0);
+  const fullSumDiff     = Math.abs(totalInstGroups - total);
+  const fullSumOk       = negType === 'full' && fullSumDiff < 0.02;
+  const partialBalance  = Math.max(0, total - totalPaidNow);
+
+  // ── Patient search ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (prefilledPatientId || patientSearch.length < 2) {
-      setPatientResults([]);
-      setShowPatientDrop(false);
-      return;
+      setPatientResults([]); setShowPatientDrop(false); return;
     }
     const t = setTimeout(async () => {
       try {
         const res = await patientsApi.list({ search: patientSearch });
         setPatientResults(Array.isArray(res) ? res : res.data || []);
         setShowPatientDrop(true);
-      } catch {
-        setPatientResults([]);
-      }
+      } catch { setPatientResults([]); }
     }, 300);
     return () => clearTimeout(t);
   }, [patientSearch, prefilledPatientId]);
 
-  // Computed totals
-  const subtotal      = items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-  const totalDiscount = items.reduce((s, i) => s + i.discount, 0);
-  const total         = items.reduce((s, i) => s + i.total, 0);
-  const totalPaid     = payMode === 'none' ? 0 : payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const balance       = total - totalPaid;
-  const hasSessionItems = items.some(i => i.sessionsTotal > 0 && i.planId);
-
-  // Auto-fill first payment amount when 'total' is selected
+  // ── Auto-fill first group amount on mode select ───────────────────────────
   useEffect(() => {
-    if (payMode === 'total' && total > 0) {
-      setPayments(prev => [{ ...prev[0], amount: String(total) }, ...prev.slice(1)]);
+    if (negType === 'full' && total > 0) {
+      setInstGroups(prev => [{ ...prev[0], amount: String(total), receivedNow: true }, ...prev.slice(1)]);
     }
-  }, [payMode, total]);
+    if (negType === 'partial' && total > 0) {
+      setPaymentsNow(prev => [{ ...prev[0], amount: '' }, ...prev.slice(1)]);
+    }
+  }, [negType, total]);
 
-  const updateItem = (key: string, changes: Partial<ItemRow>) => {
+  // ── Item helpers ─────────────────────────────────────────────────────────────
+  const updateItem = (key: string, changes: Partial<ItemRow>) =>
     setItems(prev => prev.map(item => {
       if (item.key !== key) return item;
       const next = { ...item, ...changes };
       next.total = Math.max(0, next.unitPrice * next.quantity - next.discount);
       return next;
     }));
-  };
 
-  const selectPlan = (key: string, plan: any) => {
-    updateItem(key, {
-      planId:       plan.id,
-      name:         plan.name,
-      unitPrice:    plan.price,
-      sessionsTotal: plan.sessionsTotal || 0,
-      discount:     0,
-      total:        plan.price,
-    });
-  };
+  const selectPlan = (key: string, plan: any) =>
+    updateItem(key, { planId: plan.id, name: plan.name, unitPrice: plan.price, sessionsTotal: plan.sessionsTotal || 0, discount: 0, total: plan.price });
 
+  // ── InstGroup helpers ────────────────────────────────────────────────────────
+  const updateGroup = (key: string, changes: Partial<InstGroup>) =>
+    setInstGroups(prev => prev.map(g => g.key === key ? { ...g, ...changes } : g));
+
+  const removeGroup = (key: string) =>
+    setInstGroups(prev => prev.filter(g => g.key !== key));
+
+  // ── Mutation ─────────────────────────────────────────────────────────────────
   const mut = useMutation({
     mutationFn: (data: any) => salesApi.create(data),
     onSuccess: () => { onSuccess(); onClose(); },
@@ -136,61 +215,62 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
 
   const handleSubmit = () => {
     setError('');
-    if (!selectedPatientId) { setError('Selecione um paciente.'); return; }
-    if (items.some(i => !i.planId)) { setError('Selecione o procedimento em todos os itens.'); return; }
-    if (items.length === 0) { setError('Adicione pelo menos um item.'); return; }
+    if (!selectedPatientId)                        { setError('Selecione um paciente.'); return; }
+    if (items.some(i => !i.planId))                { setError('Selecione o procedimento em todos os itens.'); return; }
+    if (items.length === 0)                        { setError('Adicione pelo menos um item.'); return; }
 
-    const paidPayments = payMode === 'none'
-      ? []
-      : payments
-          .filter(p => parseFloat(p.amount) > 0)
-          .map(p => ({
-            amount:          parseFloat(p.amount),
-            paymentMethodId: p.paymentMethodId || null,
-            paymentDate:     p.paymentDate || null,
-          }));
-
-    if (payMode !== 'none' && paidPayments.length === 0) {
-      setError('Informe o valor recebido.'); return;
-    }
-    if (paidPayments.reduce((s, p) => s + p.amount, 0) > total + 0.01) {
-      setError('Valor recebido não pode ser maior que o total.'); return;
+    if (negType === 'partial') {
+      const paid = paymentsNow.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+      if (paid <= 0)           { setError('Informe o valor recebido agora.'); return; }
+      if (paid > total + 0.01) { setError('Valor recebido não pode ser maior que o total.'); return; }
+      if (paymentsNow.some(p => parseFloat(p.amount) > 0 && !p.paymentMethodId)) {
+        setError('Informe a forma de pagamento em todos os recebimentos.'); return;
+      }
     }
 
-    const paidTotal = paidPayments.reduce((s, p) => s + p.amount, 0);
+    if (negType === 'full') {
+      if (!fullSumOk)                           { setError(`A soma da negociação (${fmt(totalInstGroups)}) precisa fechar o total da venda (${fmt(total)}).`); return; }
+      if (computedInstallments.length === 0)    { setError('Configure pelo menos uma parcela.'); return; }
+      if (computedInstallments.some(i => !i.dueDate)) { setError('Todas as parcelas precisam ter vencimento.'); return; }
+      if (computedInstallments.some(i => i.receivedNow && !i.paymentMethodId)) {
+        setError('Informe a forma de pagamento em todos os recebimentos marcados como "Recebido agora".'); return;
+      }
+    }
+
+    const pnow = negType === 'partial'
+      ? paymentsNow.filter(p => parseFloat(p.amount) > 0).map(p => ({
+          amount: parseFloat(p.amount),
+          paymentMethodId: p.paymentMethodId || null,
+          paymentDate: p.paymentDate || null,
+        }))
+      : [];
 
     mut.mutate({
-      patientId:       selectedPatientId,
-      saleType:        payMode === 'none' ? 'ORCAMENTO' : 'VENDA',
-      paidAmount:      paidTotal,
-      payments:        paidPayments,
-      paymentMethodId: paidPayments[0]?.paymentMethodId ?? null,
-      paymentDate:     paidPayments[0]?.paymentDate ?? null,
-      notes:           notes || null,
-      generateSessions: payMode !== 'none' && genSessions,
-      items: items.map(i => ({
-        planId:    i.planId || null,
-        name:      i.name,
-        quantity:  i.quantity,
-        unitPrice: i.unitPrice,
-        discount:  i.discount,
-        total:     i.total,
-      })),
+      patientId: selectedPatientId,
+      items: items.map(i => ({ planId: i.planId || null, name: i.name, quantity: i.quantity, unitPrice: i.unitPrice, discount: i.discount, total: i.total })),
+      notes: notes || null,
+      generateSessions: negType !== 'none' && genSessions,
+      negotiation: {
+        type: negType,
+        paymentsNow: pnow,
+        installments: negType === 'full' ? computedInstallments : [],
+      },
     });
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <>
+    <Portal>
       <style>{`@keyframes nvmSlide { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 900, backdropFilter: 'blur(2px)' }} />
-      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 580, background: '#FFFFFF', zIndex: 901, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 40px rgba(0,0,0,.12)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'nvmSlide .22s ease' }}>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 1000, backdropFilter: 'blur(2px)' }} />
+      <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 620, background: '#FFFFFF', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 40px rgba(0,0,0,.12)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'nvmSlide .22s ease' }}>
 
         {/* Header */}
         <div style={{ padding: '18px 24px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>Nova venda / orçamento</div>
             <div style={{ fontSize: 12, color: '#71717A', marginTop: 2 }}>
-              {selectedPatientName ? `Paciente: ${selectedPatientName}` : 'Selecione o paciente, itens e forma de pagamento'}
+              {selectedPatientName ? `Paciente: ${selectedPatientName}` : 'Selecione o paciente, itens e negociação'}
             </div>
           </div>
           <button onClick={onClose} style={{ width: 30, height: 30, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717A' }}>
@@ -207,29 +287,27 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
             </div>
           )}
 
-          {/* ── Patient search (hidden when prefilledPatientId) ── */}
+          {/* ── Bloco 1: Paciente ── */}
           {!prefilledPatientId && (
             <div>
               <label style={lbl}>Paciente <span style={{ color: '#DC2626' }}>*</span></label>
               <div style={{ position: 'relative' }}>
-                <div style={{ position: 'relative' }}>
-                  <i className="ti ti-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#A1A1AA', pointerEvents: 'none' }} />
-                  <input
-                    value={selectedPatientId ? selectedPatientName : patientSearch}
-                    onChange={e => {
-                      if (selectedPatientId) { setSelectedPatientId(''); setSelectedPatientName(''); }
-                      setPatientSearch(e.target.value);
-                    }}
-                    placeholder="Buscar paciente pelo nome, telefone ou CPF..."
-                    style={{ ...inp, paddingLeft: 32, paddingRight: selectedPatientId ? 32 : 10, borderColor: selectedPatientId ? '#16A34A' : '#E4E4E7' }}
-                  />
-                  {selectedPatientId && (
-                    <button onClick={() => { setSelectedPatientId(''); setSelectedPatientName(''); setPatientSearch(''); }}
-                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#A1A1AA', fontSize: 13, lineHeight: 1 }}>
-                      ✕
-                    </button>
-                  )}
-                </div>
+                <i className="ti ti-search" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#A1A1AA', pointerEvents: 'none' }} />
+                <input
+                  value={selectedPatientId ? selectedPatientName : patientSearch}
+                  onChange={e => {
+                    if (selectedPatientId) { setSelectedPatientId(''); setSelectedPatientName(''); }
+                    setPatientSearch(e.target.value);
+                  }}
+                  placeholder="Buscar paciente pelo nome, telefone ou CPF..."
+                  style={{ ...inp, paddingLeft: 32, paddingRight: selectedPatientId ? 32 : 10, borderColor: selectedPatientId ? '#16A34A' : '#E4E4E7' }}
+                />
+                {selectedPatientId && (
+                  <button onClick={() => { setSelectedPatientId(''); setSelectedPatientName(''); setPatientSearch(''); }}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: '#A1A1AA', fontSize: 13 }}>
+                    ✕
+                  </button>
+                )}
                 {showPatientDrop && patientResults.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.12)', zIndex: 10, maxHeight: 200, overflowY: 'auto', marginTop: 4 }}>
                     {patientResults.map((p: any) => (
@@ -248,12 +326,10 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
             </div>
           )}
 
-          {/* ── Items ── */}
+          {/* ── Bloco 2: Itens ── */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <label style={{ ...lbl, marginBottom: 0 }}>
-                Procedimentos / Serviços <span style={{ color: '#DC2626' }}>*</span>
-              </label>
+              <label style={{ ...lbl, marginBottom: 0 }}>Procedimentos / Serviços <span style={{ color: '#DC2626' }}>*</span></label>
               <button onClick={() => setItems(prev => [...prev, makeItem()])}
                 style={{ height: 28, padding: '0 10px', background: '#F4F4F5', border: '1px solid #E4E4E7', borderRadius: 6, fontSize: 12, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <i className="ti ti-plus" style={{ fontSize: 12 }} /> Adicionar item
@@ -272,21 +348,16 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
                       </button>
                     )}
                   </div>
-
-                  <div style={{ marginBottom: item.planId ? 10 : 0 }}>
-                    <select value={item.planId} onChange={e => {
-                      const plan = (plans as any[]).find(p => p.id === e.target.value);
-                      if (plan) selectPlan(item.key, plan);
-                      else updateItem(item.key, { planId: '', name: '', unitPrice: 0, total: 0, sessionsTotal: 0 });
-                    }}
-                      style={{ ...inp, cursor: 'pointer' }}>
-                      <option value="">Selecione um procedimento ou serviço...</option>
-                      {(plans as any[]).filter((p: any) => p.active !== false).map((p: any) => (
-                        <option key={p.id} value={p.id}>{p.name} — {fmt(p.price)}</option>
-                      ))}
-                    </select>
-                  </div>
-
+                  <select value={item.planId} onChange={e => {
+                    const plan = (plans as any[]).find(p => p.id === e.target.value);
+                    if (plan) selectPlan(item.key, plan);
+                    else updateItem(item.key, { planId: '', name: '', unitPrice: 0, total: 0, sessionsTotal: 0 });
+                  }} style={{ ...inp, cursor: 'pointer', marginBottom: item.planId ? 10 : 0 }}>
+                    <option value="">Selecione um procedimento ou serviço...</option>
+                    {(plans as any[]).filter((p: any) => p.active !== false).map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.name} — {fmt(p.price)}</option>
+                    ))}
+                  </select>
                   {item.planId && (
                     <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 8 }}>
                       <div>
@@ -315,7 +386,6 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
                       </div>
                     </div>
                   )}
-
                   {item.sessionsTotal > 0 && (
                     <div style={{ marginTop: 8, fontSize: 11, color: '#2563EB', display: 'flex', alignItems: 'center', gap: 5 }}>
                       <i className="ti ti-activity" style={{ fontSize: 12 }} />
@@ -326,7 +396,6 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
               ))}
             </div>
 
-            {/* Totals */}
             {items.some(i => i.planId) && (
               <div style={{ marginTop: 10, padding: '12px 14px', background: '#F4F4F5', borderRadius: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
@@ -338,35 +407,35 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
                   </div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700, color: '#09090B', paddingTop: 6, borderTop: '1px solid #E4E4E7', marginTop: 2 }}>
-                  <span>Total</span><span>{fmt(total)}</span>
+                  <span>Total da venda</span><span>{fmt(total)}</span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* ── Notes ── */}
+          {/* ── Observação ── */}
           <div>
             <label style={lbl}>Observação (opcional)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              placeholder="Observações internas sobre esta venda..."
+              placeholder="Observações internas..."
               style={{ ...inp, height: 58, padding: '8px 10px', resize: 'vertical', lineHeight: 1.5 } as React.CSSProperties} />
           </div>
 
-          {/* ── Payment mode selector ── */}
-          <div>
-            <div style={{ height: 1, background: '#E4E4E7', marginBottom: 16 }} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#09090B', marginBottom: 3 }}>Como deseja registrar o pagamento?</div>
-            <div style={{ fontSize: 12, color: '#71717A', marginBottom: 12 }}>Escolha uma opção para continuar.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+          {/* ── Bloco 3: Negociação ── */}
+          <div style={{ borderTop: '2px solid #F4F4F5', paddingTop: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#09090B', marginBottom: 3 }}>Como será a negociação?</div>
+            <div style={{ fontSize: 12, color: '#71717A', marginBottom: 14 }}>A negociação define o que entra no financeiro.</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 16 }}>
               {([
-                { key: 'none'    as const, icon: 'ti-clock',        label: 'Sem pagamento', desc: 'Salvar como orçamento', color: '#64748B', bg: '#F8FAFC', border: '#E2E8F0' },
-                { key: 'total'   as const, icon: 'ti-circle-check', label: 'Receber total',  desc: 'Pagamento completo',   color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
-                { key: 'partial' as const, icon: 'ti-circle-half-2', label: 'Receber parcial', desc: 'Entrada ou sinal',   color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
-              ] as const).map(opt => {
-                const sel = payMode === opt.key;
+                { key: 'none'    as NegType, icon: 'ti-clock',          label: 'Sem pagamento',  desc: 'Salvar como orçamento',     color: '#64748B', bg: '#F8FAFC', border: '#CBD5E1' },
+                { key: 'partial' as NegType, icon: 'ti-circle-half-2',  label: 'Receber parcial', desc: 'Registrar entrada parcial',  color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+                { key: 'full'    as NegType, icon: 'ti-circle-check',   label: 'Receber total',   desc: 'Negociar valor completo',    color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
+              ]).map(opt => {
+                const sel = negType === opt.key;
                 return (
                   <button key={opt.key} type="button"
-                    onClick={() => { setPayMode(opt.key); setRemainMode(null); }}
+                    onClick={() => setNegType(opt.key)}
                     style={{ padding: '10px 8px', borderRadius: 10, border: `2px solid ${sel ? opt.color : opt.border}`, background: sel ? opt.bg : '#FFFFFF', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'all .12s' }}>
                     <i className={`ti ${opt.icon}`} style={{ fontSize: 16, color: opt.color, display: 'block', marginBottom: 4 }} />
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#09090B', marginBottom: 1 }}>{opt.label}</div>
@@ -375,151 +444,217 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
                 );
               })}
             </div>
+
+            {/* ── Sem pagamento ── */}
+            {negType === 'none' && (
+              <div style={{ padding: '14px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <i className="ti ti-info-circle" style={{ fontSize: 16, color: '#64748B', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B' }}>Será salvo como orçamento</div>
+                  <div style={{ fontSize: 12, color: '#64748B', marginTop: 3, lineHeight: 1.5 }}>
+                    Nenhum lançamento será criado no financeiro. O orçamento pode ser convertido em venda depois.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Receber parcial ── */}
+            {negType === 'partial' && (
+              <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: '16px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#A16207', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>
+                  Valor recebido agora
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {paymentsNow.map((p, idx) => (
+                    <div key={p.key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 32px', gap: 8, alignItems: 'flex-end' }}>
+                      <div>
+                        {idx === 0 && <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, marginBottom: 5 }}>Valor (R$) *</div>}
+                        <input type="number" min="0" step="0.01" value={p.amount} placeholder="0,00"
+                          onChange={e => setPaymentsNow(prev => prev.map((r, i) => i === idx ? { ...r, amount: e.target.value } : r))}
+                          style={inp} />
+                      </div>
+                      <div>
+                        {idx === 0 && <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, marginBottom: 5 }}>Forma de pagamento <span style={{ color: '#DC2626' }}>*</span></div>}
+                        <select value={p.paymentMethodId}
+                          onChange={e => setPaymentsNow(prev => prev.map((r, i) => i === idx ? { ...r, paymentMethodId: e.target.value } : r))}
+                          style={{ ...inp, cursor: 'pointer', borderColor: !p.paymentMethodId ? '#FECACA' : '#E4E4E7' }}>
+                          <option value="">Selecione...</option>
+                          {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        {idx === 0 && <div style={{ fontSize: 11, color: '#71717A', fontWeight: 500, marginBottom: 5 }}>Data</div>}
+                        <input type="date" value={p.paymentDate}
+                          onChange={e => setPaymentsNow(prev => prev.map((r, i) => i === idx ? { ...r, paymentDate: e.target.value } : r))}
+                          style={inp} />
+                      </div>
+                      <button onClick={() => setPaymentsNow(prev => prev.filter((_, i) => i !== idx))}
+                        disabled={paymentsNow.length === 1}
+                        style={{ width: 32, height: 36, border: '1px solid #E4E4E7', background: '#FFFFFF', borderRadius: 8, cursor: paymentsNow.length === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#A1A1AA' }}>
+                        <i className="ti ti-trash" style={{ fontSize: 12 }} />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={() => setPaymentsNow(prev => [...prev, makePmtRow()])}
+                    style={{ height: 32, padding: '0 12px', background: 'transparent', border: '1px dashed #FDE68A', borderRadius: 8, fontSize: 12, fontWeight: 500, color: '#A16207', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start' }}>
+                    <i className="ti ti-plus" style={{ fontSize: 12 }} /> + Forma de pagamento
+                  </button>
+                </div>
+
+                {/* Resumo parcial */}
+                <div style={{ marginTop: 12, padding: '10px 12px', background: '#FFFFFF', borderRadius: 8, border: '1px solid #FDE68A' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
+                    <span>Total da venda</span><span style={{ fontWeight: 600, color: '#09090B' }}>{fmt(total)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
+                    <span>Recebido agora</span><span style={{ fontWeight: 600, color: '#16A34A' }}>{fmt(totalPaidNow)}</span>
+                  </div>
+                  {partialBalance > 0.01 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, paddingTop: 6, borderTop: '1px solid #FDE68A', marginTop: 3 }}>
+                      <span style={{ color: '#71717A' }}>Saldo não negociado</span>
+                      <span style={{ fontWeight: 700, color: '#D97706' }}>{fmt(partialBalance)}</span>
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: '#92400E', background: '#FEF3C7', padding: '8px 10px', borderRadius: 6 }}>
+                  O saldo restante de <b>{fmt(partialBalance)}</b> ficará na venda como saldo não negociado, sem criar lançamentos no financeiro.
+                </div>
+              </div>
+            )}
+
+            {/* ── Receber total ── */}
+            {negType === 'full' && (
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: '16px' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#15803D', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 14 }}>
+                  Negociação completa — {fmt(total)}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {instGroups.map((g, gi) => (
+                    <div key={g.key} style={{ background: '#FFFFFF', borderRadius: 10, border: '1px solid #BBF7D0', padding: '14px 14px 12px' }}>
+                      {/* Group header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#15803D', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                          Forma {gi + 1}
+                        </span>
+                        {instGroups.length > 1 && (
+                          <button onClick={() => removeGroup(g.key)}
+                            style={{ width: 22, height: 22, border: 'none', background: 'transparent', cursor: 'pointer', color: '#A1A1AA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <i className="ti ti-x" style={{ fontSize: 12 }} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Method + Amount */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                        <div>
+                          <label style={{ ...lbl, fontSize: 11 }}>Forma de pagamento *</label>
+                          <select value={g.paymentMethodId} onChange={e => updateGroup(g.key, { paymentMethodId: e.target.value })}
+                            style={{ ...inp, cursor: 'pointer' }}>
+                            <option value="">Selecione...</option>
+                            {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ ...lbl, fontSize: 11 }}>Valor (R$) *</label>
+                          <input type="number" min="0" step="0.01" value={g.amount} placeholder="0,00"
+                            onChange={e => updateGroup(g.key, { amount: e.target.value })}
+                            style={inp} />
+                        </div>
+                      </div>
+
+                      {/* Parcelas + Data + Frequência */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                        <div>
+                          <label style={{ ...lbl, fontSize: 11 }}>Parcelas</label>
+                          <input type="number" min="1" max="120" value={g.count}
+                            onChange={e => updateGroup(g.key, { count: Math.max(1, parseInt(e.target.value) || 1) })}
+                            style={{ ...inp, textAlign: 'center' }} />
+                        </div>
+                        <div>
+                          <label style={{ ...lbl, fontSize: 11 }}>{g.count > 1 ? '1º vencimento' : 'Vencimento'} *</label>
+                          <input type="date" value={g.firstDueDate}
+                            onChange={e => updateGroup(g.key, { firstDueDate: e.target.value })}
+                            style={inp} />
+                        </div>
+                        {g.count > 1 && (
+                          <div>
+                            <label style={{ ...lbl, fontSize: 11 }}>Frequência</label>
+                            <select value={g.frequency} onChange={e => updateGroup(g.key, { frequency: e.target.value })}
+                              style={{ ...inp, cursor: 'pointer' }}>
+                              {FREQ_OPTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Recebido agora toggle */}
+                      <button onClick={() => updateGroup(g.key, { receivedNow: !g.receivedNow })}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontFamily: 'inherit' }}>
+                        <div style={{ width: 36, height: 20, borderRadius: 99, background: g.receivedNow ? '#16A34A' : '#E4E4E7', position: 'relative', transition: 'background .15s', flexShrink: 0 }}>
+                          <div style={{ position: 'absolute', top: 2, left: g.receivedNow ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#FFFFFF', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: g.receivedNow ? '#16A34A' : '#71717A' }}>
+                          {g.receivedNow ? 'Recebido agora' : 'Agendar para receber'}
+                        </span>
+                      </button>
+
+                      {/* Parcelas preview */}
+                      {(parseFloat(g.amount) || 0) > 0 && g.count > 1 && g.firstDueDate && (
+                        <div style={{ marginTop: 10, background: '#F0FDF4', borderRadius: 8, padding: '10px 12px', border: '1px solid #BBF7D0' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#15803D', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+                            Parcelas geradas
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {buildInstallments([g]).map((inst, ii) => (
+                              <div key={ii} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#374151' }}>
+                                <span style={{ color: '#71717A' }}>{ii + 1}/{g.count} — {new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                                <span style={{ fontWeight: 600, color: '#09090B' }}>{fmt(inst.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Adicionar forma */}
+                  <button onClick={() => setInstGroups(prev => [...prev, makeInstGroup()])}
+                    style={{ height: 36, padding: '0 14px', background: 'transparent', border: '1px dashed #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 500, color: '#15803D', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start' }}>
+                    <i className="ti ti-plus" style={{ fontSize: 12 }} /> Adicionar forma de pagamento
+                  </button>
+                </div>
+
+                {/* Resumo full */}
+                <div style={{ marginTop: 14, padding: '12px 14px', background: '#FFFFFF', borderRadius: 8, border: `1px solid ${fullSumOk ? '#BBF7D0' : '#FECACA'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
+                    <span>Total da venda</span><span style={{ fontWeight: 600, color: '#09090B' }}>{fmt(total)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
+                    <span>Soma da negociação</span>
+                    <span style={{ fontWeight: 600, color: fullSumOk ? '#16A34A' : '#DC2626' }}>{fmt(totalInstGroups)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 4 }}>
+                    <span>Recebido agora</span>
+                    <span style={{ fontWeight: 600, color: totalPaidNow > 0 ? '#16A34A' : '#A1A1AA' }}>{fmt(totalPaidNow)}</span>
+                  </div>
+                  {computedInstallments.length > 0 && (
+                    <div style={{ paddingTop: 6, borderTop: `1px solid ${fullSumOk ? '#BBF7D0' : '#FECACA'}`, marginTop: 3, fontSize: 12, color: '#71717A' }}>
+                      <span>{computedInstallments.length} lançamento{computedInstallments.length !== 1 ? 's' : ''} serão criados no financeiro</span>
+                    </div>
+                  )}
+                  {!fullSumOk && totalInstGroups > 0 && (
+                    <div style={{ fontSize: 11, color: '#DC2626', marginTop: 6 }}>
+                      Diferença de {fmt(Math.abs(totalInstGroups - total))} — ajuste os valores para fechar o total.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* ── Payment details ── */}
-          {payMode !== 'none' && (
-            <div style={{ background: payMode === 'total' ? '#F0FDF4' : '#FFFBEB', border: `1px solid ${payMode === 'total' ? '#BBF7D0' : '#FDE68A'}`, borderRadius: 10, padding: '14px 16px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: payMode === 'total' ? '#15803D' : '#A16207', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>
-                {payMode === 'total' ? 'Recebimento total' : 'Recebimento parcial'}
-              </div>
-
-              {payments.map((pay, pi) => (
-                <div key={pay.key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 8, marginBottom: pi < payments.length - 1 ? 10 : 0, alignItems: 'end' }}>
-                  <div>
-                    <label style={{ ...lbl, fontSize: 11 }}>
-                      {payments.length > 1 ? `Pagamento ${pi + 1}` : 'Valor recebido'} *
-                    </label>
-                    <input type="number" min="0" value={pay.amount} placeholder="0,00"
-                      onChange={e => {
-                        const v = e.target.value;
-                        setPayments(prev => prev.map((p, i) => i === pi ? { ...p, amount: v } : p));
-                      }}
-                      style={inp} />
-                  </div>
-                  <div>
-                    <label style={{ ...lbl, fontSize: 11 }}>Forma de pagamento</label>
-                    <select value={pay.paymentMethodId}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setPayments(prev => prev.map((p, i) => i === pi ? { ...p, paymentMethodId: v } : p));
-                      }}
-                      style={{ ...inp, cursor: 'pointer' }}>
-                      <option value="">Não informado</option>
-                      {(paymentMethods as any[]).map((m: any) => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 1 }}>
-                    {payments.length > 1 && (
-                      <button onClick={() => setPayments(prev => prev.filter((_, i) => i !== pi))}
-                        style={{ width: 28, height: 36, border: 'none', background: 'transparent', cursor: 'pointer', color: '#A1A1AA', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }}>
-                        <i className="ti ti-trash" style={{ fontSize: 13 }} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginTop: 10, alignItems: 'end' }}>
-                <div>
-                  <label style={{ ...lbl, fontSize: 11 }}>Data do pagamento</label>
-                  <input type="date" value={payments[0]?.paymentDate || todayIso()}
-                    onChange={e => {
-                      const v = e.target.value;
-                      setPayments(prev => prev.map(p => ({ ...p, paymentDate: v })));
-                    }}
-                    style={{ ...inp, width: 'auto' }} />
-                </div>
-                <button onClick={() => setPayments(prev => [...prev, makePayment()])}
-                  style={{ height: 36, padding: '0 12px', background: 'transparent', border: `1px solid ${payMode === 'total' ? '#BBF7D0' : '#FDE68A'}`, borderRadius: 8, fontSize: 12, fontWeight: 500, color: payMode === 'total' ? '#15803D' : '#A16207', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                  <i className="ti ti-plus" style={{ fontSize: 12 }} /> + Forma
-                </button>
-              </div>
-
-              {/* Balance summary box */}
-              <div style={{ marginTop: 12, padding: '10px 12px', background: '#FFFFFF', borderRadius: 8, border: `1px solid ${payMode === 'total' ? '#BBF7D0' : '#FDE68A'}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 3 }}>
-                  <span>Total a cobrar</span>
-                  <span style={{ fontWeight: 600, color: '#09090B' }}>{fmt(total)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#71717A', marginBottom: 3 }}>
-                  <span>Recebido agora</span>
-                  <span style={{ fontWeight: 600, color: totalPaid > 0 ? '#16A34A' : '#A1A1AA' }}>{fmt(totalPaid)}</span>
-                </div>
-                {balance > 0.01 ? (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: '#D97706', paddingTop: 6, borderTop: '1px solid #E4E4E7', marginTop: 3 }}>
-                    <span>Saldo em aberto</span><span>{fmt(balance)}</span>
-                  </div>
-                ) : totalPaid > 0 && (
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#16A34A', paddingTop: 6, borderTop: '1px solid #E4E4E7', marginTop: 3 }}>
-                    ✓ Pago integralmente
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Balance control (only for partial) ── */}
-          {payMode === 'partial' && balance > 0.01 && (
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
-                Como deseja controlar o saldo restante?
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                {([
-                  { key: 'parcela_unica' as const, label: 'Parcela única',    icon: 'ti-calendar' },
-                  { key: 'parcelar'      as const, label: 'Parcelar saldo',   icon: 'ti-calendar-repeat' },
-                  { key: 'em_aberto'     as const, label: 'Deixar em aberto', icon: 'ti-clock' },
-                ]).map(opt => {
-                  const sel = remainMode === opt.key;
-                  return (
-                    <button key={opt.key} onClick={() => setRemainMode(opt.key)}
-                      style={{ padding: '9px 8px', borderRadius: 8, border: `1.5px solid ${sel ? '#D97706' : '#FDE68A'}`, background: sel ? '#FEF3C7' : '#FFFFFF', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <i className={`ti ${opt.icon}`} style={{ fontSize: 13, color: '#D97706' }} />
-                      <span style={{ fontSize: 11, fontWeight: sel ? 700 : 500, color: '#374151' }}>{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {remainMode === 'parcela_unica' && (
-                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div>
-                    <label style={{ ...lbl, fontSize: 11 }}>Valor restante</label>
-                    <div style={{ height: 36, padding: '0 10px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#D97706', background: '#FFFBEB', display: 'flex', alignItems: 'center' }}>
-                      {fmt(balance)}
-                    </div>
-                  </div>
-                  <div>
-                    <label style={{ ...lbl, fontSize: 11 }}>Data de vencimento</label>
-                    <input type="date" style={inp} />
-                  </div>
-                </div>
-              )}
-              {remainMode === 'parcelar' && (
-                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  <div><label style={{ ...lbl, fontSize: 11 }}>Qtd. parcelas</label><input type="number" placeholder="3" style={inp} /></div>
-                  <div><label style={{ ...lbl, fontSize: 11 }}>Primeiro venc.</label><input type="date" style={inp} /></div>
-                  <div>
-                    <label style={{ ...lbl, fontSize: 11 }}>Frequência</label>
-                    <select style={{ ...inp, cursor: 'pointer' }}>
-                      <option>Mensal</option><option>Quinzenal</option><option>Semanal</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-              {remainMode === 'em_aberto' && (
-                <div style={{ marginTop: 10, maxWidth: 200 }}>
-                  <label style={{ ...lbl, fontSize: 11 }}>Vencimento (opcional)</label>
-                  <input type="date" style={inp} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Session generation ── */}
-          {payMode !== 'none' && hasSessionItems && (
+          {/* ── Geração de sessões ── */}
+          {negType !== 'none' && hasSessionItems && (
             <div style={{ padding: '12px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#1D4ED8', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <i className="ti ti-activity" style={{ fontSize: 13 }} />
@@ -547,19 +682,14 @@ export function NovaVendaModal({ onClose, onSuccess, prefilledPatientId, prefill
           <button onClick={handleSubmit} disabled={mut.isPending}
             style={{ flex: 2, height: 40, background: mut.isPending ? '#A1A1AA' : '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#FFFFFF', cursor: mut.isPending ? 'not-allowed' : 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
             {mut.isPending ? (
-              <>
-                <div style={{ width: 13, height: 13, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                Salvando...
-              </>
+              <><div style={{ width: 13, height: 13, border: '2px solid rgba(255,255,255,.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /> Salvando...</>
             ) : (
-              <>
-                <i className="ti ti-check" style={{ fontSize: 14 }} />
-                {payMode === 'none' ? 'Salvar orçamento' : payMode === 'total' ? 'Salvar venda' : 'Salvar e registrar entrada'}
-              </>
+              <><i className="ti ti-check" style={{ fontSize: 14 }} />
+                {negType === 'none' ? 'Salvar orçamento' : negType === 'partial' ? 'Salvar venda parcial' : 'Salvar e gerar lançamentos'}</>
             )}
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }

@@ -28,7 +28,8 @@ interface NavItem {
 // ─── Nav Config ───────────────────────────────────────────────────────────────
 
 const NAV: NavItem[] = [
-  { key: 'dashboard',     icon: 'ti-layout-dashboard', label: 'Dashboard',  path: '/dashboard',     module: 'dashboard' },
+  { key: 'inicio',        icon: 'ti-home',              label: 'Início',     path: '/inicio',        module: 'dashboard' },
+  { key: 'dashboard',            icon: 'ti-layout-dashboard', label: 'Dashboard',           path: '/dashboard',           module: 'dashboard' },
   { key: 'patients',      icon: 'ti-users',             label: 'Contatos',   path: '/patients',      module: 'contacts' },
   { key: 'agenda',        icon: 'ti-calendar',          label: 'Agenda',     path: '/agenda',        module: 'agenda' },
   {
@@ -63,7 +64,9 @@ const NAV: NavItem[] = [
     ],
   },
   { key: 'messages',      icon: 'ti-message-2',         label: 'Mensagens',  path: '/messages',      module: 'messages' },
-  { key: 'oportunidades', icon: 'ti-layout-kanban',     label: 'CRM',        path: '/oportunidades', module: 'opportunities' },
+  { key: 'crm', icon: 'ti-layout-kanban', label: 'CRM', path: '/crm', module: 'opportunities', desc: 'Gestão de leads e oportunidades' },
+  { key: 'tarefas', icon: 'ti-checkbox', label: 'Tarefas', path: '/tarefas', module: 'tasks' },
+  { key: 'receita-inteligente', icon: 'ti-sparkles', label: 'Receita Inteligente', path: '/receita-inteligente', module: 'revenue_intelligence' },
 ];
 
 const SETTINGS: NavItem = { key: 'settings', icon: 'ti-settings', label: 'Configurações', path: '/settings', module: 'settings' };
@@ -299,7 +302,7 @@ export function AppLayout() {
         setFlyoutItem(null);
         setTip({ label: item.label, y: rect.top + rect.height / 2 });
       }
-      if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.06)';
+      if (!active && item.key !== 'receita-inteligente') (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.06)';
     };
 
     const onLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -308,7 +311,7 @@ export function AppLayout() {
       } else {
         setTip(null);
       }
-      if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent';
+      if (!active && item.key !== 'receita-inteligente') (e.currentTarget as HTMLElement).style.background = 'transparent';
     };
 
     const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -353,7 +356,17 @@ export function AppLayout() {
         aria-label={item.label}
         aria-haspopup={hasSubItems ? 'menu' : undefined}
         aria-expanded={hasSubItems ? flyoutOpen : undefined}
-        style={{
+        style={item.key === 'receita-inteligente' ? {
+          width: 38, height: 38, borderRadius: 12,
+          border: 'none',
+          background: active
+            ? 'linear-gradient(135deg, #4F46E5, #7C3AED)'
+            : 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', flexShrink: 0, transition: 'opacity 0.15s',
+          boxShadow: '0 2px 12px rgba(99,102,241,0.45)',
+          position: 'relative',
+        } : {
           width: 38, height: 38, borderRadius: '50%',
           border:      active ? `1.5px solid ${primaryColor}22` : 'none',
           background:  active ? `${primaryColor}0F` : 'transparent',
@@ -362,17 +375,23 @@ export function AppLayout() {
           position: 'relative',
         }}
       >
-        <i className={`ti ${item.icon}`} style={{ fontSize: 18, color: active ? primaryColor : '#18181B' }} />
+        <i
+          className={`ti ${item.icon}`}
+          style={{
+            fontSize: 18,
+            color: item.key === 'receita-inteligente' ? '#FFFFFF' : (active ? primaryColor : '#18181B'),
+          }}
+        />
         {/* Chevron badge — indica que existem submenus */}
         {hasSubItems && (
           <span style={{
             position: 'absolute', bottom: 2, right: 2,
             width: 11, height: 11, borderRadius: '50%',
-            background: active ? primaryColor : '#D4D4D8',
+            background: '#D4D4D8',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <i className="ti ti-chevron-right" style={{ fontSize: 6, color: active ? '#fff' : '#71717A', lineHeight: 1 }} />
+            <i className="ti ti-chevron-right" style={{ fontSize: 6, color: '#71717A', lineHeight: 1 }} />
           </span>
         )}
       </button>
@@ -536,29 +555,22 @@ export function AppLayout() {
         {/* ── LEFT — Brand + Greeting ── */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
 
-          {/* Brand identity */}
-          <img
-            src="/nassclin-logo.png"
-            alt="nassclin"
-            style={{ height: 20, width: 'auto', objectFit: 'contain', display: 'block', flexShrink: 0 }}
-          />
+          {/* Brand mark */}
+          <img src="/nassclin-horizontal.png" alt="nassclin" style={{ height: 20, width: 'auto', objectFit: 'contain', display: 'block', flexShrink: 0 }} />
 
           {/* Divider */}
-          <div style={{ width: 1, height: 34, background: 'rgba(0,0,0,0.07)', flexShrink: 0 }} />
+          <div style={{ width: 1, height: 34, background: 'rgba(0,0,0,0.12)', flexShrink: 0 }} />
 
-          {/* Greeting + date */}
+          {/* Clinic name */}
           <div style={{ minWidth: 0, overflow: 'hidden' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-              {greeting}{firstName ? `, ${firstName}` : ''}
+              {user?.clinic?.name ?? 'Minha Clínica'}
             </div>
-            <div style={{ lineHeight: 1.3, marginTop: 2 }}>
-              <span className="topbar-date-full" style={{ fontSize: 11, color: '#71717A', whiteSpace: 'nowrap' }}>
-                {dateLineStr}
-              </span>
-              <span className="topbar-date-short" style={{ fontSize: 11, color: '#71717A', whiteSpace: 'nowrap' }}>
-                {dateShort}
-              </span>
-            </div>
+            {(user?.clinic as any)?.observacoes && (
+              <div style={{ fontSize: 11, color: '#71717A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3, marginTop: 1 }}>
+                {(user?.clinic as any).observacoes}
+              </div>
+            )}
           </div>
         </div>
 
@@ -705,11 +717,11 @@ export function AppLayout() {
       <nav style={{
         position: 'fixed',
         left: 12,
-        top: topOffset + 12,
-        bottom: 12,
-        width: 56,
+        top: topOffset + 28,
+        bottom: 48,
+        width: 50,
         zIndex: 9995,
-        borderRadius: 28,
+        borderRadius: 24,
         background: 'rgba(255,255,255,0.55)',
         backdropFilter:       'blur(24px) saturate(180%)',
         WebkitBackdropFilter: 'blur(24px) saturate(180%)',
@@ -718,10 +730,7 @@ export function AppLayout() {
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         paddingTop: 12, paddingBottom: 16, gap: 4,
       }}>
-        {/* Brand mark */}
-        <div style={{ paddingBottom: 8, paddingTop: 2 }}>
-          <img src="/nc-symbol.png" alt="nassclin" style={{ width: 28, height: 28, objectFit: 'contain', display: 'block' }} />
-        </div>
+        <div style={{ flex: 1 }} />
         {NAV.filter(item => isAdmin || canView(item.module)).map(navBtn)}
         <div style={{ flex: 1 }} />
         {(isAdmin || canView(SETTINGS.module)) && navBtn(SETTINGS)}
@@ -731,7 +740,7 @@ export function AppLayout() {
       <main ref={mainRef} style={{
         position: 'fixed',
         top: topOffset,
-        left: 80,
+        left: 72,
         right: 0,
         bottom: 0,
         zIndex: 31,

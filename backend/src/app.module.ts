@@ -27,6 +27,9 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { QuickRepliesModule } from './quick-replies/quick-replies.module';
+import { SettingsModule } from './settings/settings.module';
+import { HomeModule } from './home/home.module';
+import { RevenueIntelligenceModule } from './revenue-intelligence/revenue-intelligence.module';
 
 @Module({
   imports: [
@@ -58,6 +61,9 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
     ConversationsModule,
     WebhooksModule,
     QuickRepliesModule,
+    SettingsModule,
+    HomeModule,
+    RevenueIntelligenceModule,
   ],
 })
 export class AppModule {}

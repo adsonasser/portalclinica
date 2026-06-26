@@ -203,6 +203,10 @@ model Clinic {
   conversations       Conversation[]
   chatMessages        ChatMessage[]
   quickReplies        QuickReply[]
+  leadSources           LeadSource[]
+  leadLossReasons       LeadLossReason[]
+  postIts               PostIt[]
+  financialRecurrences  FinancialRecurrence[]
 
   @@map("clinics")
 }
@@ -262,6 +266,7 @@ model User {
   chatMessages    ChatMessage[]
   evolutionNotes  EvolutionNote[] @relation("EvolutionNoteAuthor")
   prescriptions   Prescription[]  @relation("PrescriptionAuthor")
+  assignedLeads   Lead[]          @relation("LeadAssignee")
 
   @@unique([clinicId, email])
   @@map("users")
@@ -530,33 +535,40 @@ model PatientNote {
 }
 
 model Lead {
-  id          String          @id @default(cuid())
-  clinicId    String
-  name        String
-  email       String?
-  phone       String?
-  source      String?
-  status      LeadStatus      @default(NOVO)
-  temperature LeadTemperature @default(FRIO)
-  patientId   String?
-  funnelId    String?
-  stageId     String?
-  stageOrder  Int             @default(0)
-  value       Float?
-  notes       String?
-  lostReason  String?
-  wonAt       DateTime?
-  lostAt      DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  clinicId        String
+  name            String
+  email           String?
+  phone           String?
+  source          String?
+  status          LeadStatus      @default(NOVO)
+  temperature     LeadTemperature @default(FRIO)
+  patientId       String?
+  funnelId        String?
+  stageId         String?
+  stageOrder      Int             @default(0)
+  value           Float?
+  notes           String?
+  lostReason      String?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  assignedUserId  String?
+  nextActivity    String?
+  nextActivityAt  DateTime?
+  leadSourceId    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  clinic   Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  patient  Patient?       @relation(fields: [patientId], references: [id])
-  funnel   Funnel?        @relation(fields: [funnelId], references: [id])
-  stage    FunnelStage?   @relation(fields: [stageId], references: [id])
-  tasks    Task[]
-  messages Message[]
-  activities LeadActivity[]
+  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patient       Patient?       @relation(fields: [patientId], references: [id])
+  funnel        Funnel?        @relation(fields: [funnelId], references: [id])
+  stage         FunnelStage?   @relation(fields: [stageId], references: [id])
+  tasks         Task[]
+  messages      Message[]
+  activities    LeadActivity[]
+  assignedUser  User?          @relation("LeadAssignee", fields: [assignedUserId], references: [id])
+  leadSource    LeadSource?    @relation(fields: [leadSourceId], references: [id])
+  history       LeadHistory[]
 
   @@map("leads")
 }
@@ -577,11 +589,14 @@ model Funnel {
 }
 
 model FunnelStage {
-  id       String @id @default(cuid())
-  funnelId String
-  name     String
-  order    Int    @default(0)
-  color    String @default("#E5E7EB")
+  id        String  @id @default(cuid())
+  funnelId  String
+  name      String
+  order     Int     @default(0)
+  color     String  @default("#E5E7EB")
+  isInitial Boolean @default(false)
+  isWon     Boolean @default(false)
+  isLost    Boolean @default(false)
 
   funnel Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
   leads  Lead[]
@@ -601,6 +616,62 @@ model LeadActivity {
   @@map("lead_activities")
 }
 
+model LeadSource {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  leads  Lead[]
+
+  @@map("lead_sources")
+}
+
+model LeadLossReason {
+  id        String   @id @default(cuid())
+  clinicId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("lead_loss_reasons")
+}
+
+model LeadHistory {
+  id        String   @id @default(cuid())
+  leadId    String
+  clinicId  String
+  event     String
+  content   String
+  userId    String?
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("lead_history")
+}
+
+model PostIt {
+  id        String   @id @default(cuid())
+  clinicId  String
+  title     String?
+  content   String
+  color     String   @default("#FFFBEB")
+  userId    String?
+  pinned    Boolean  @default(false)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("post_its")
+}
+
 model Task {
   id          String       @id @default(cuid())
   clinicId    String
@@ -608,6 +679,8 @@ model Task {
   description String?
   status      TaskStatus   @default(PENDENTE)
   priority    TaskPriority @default(MEDIA)
+  type        String       @default("OUTRO")
+  notes       String?
   assigneeId  String?
   patientId   String?
   leadId      String?
@@ -718,12 +791,32 @@ model PaymentMethod {
   @@map("payment_methods")
 }
 
+model FinancialRecurrence {
+  id          String   @id @default(cuid())
+  clinicId    String
+  type        String
+  description String
+  amount      Float
+  frequency   String
+  startDate   DateTime
+  endDate     DateTime?
+  occurrences Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clinic       Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+
+  @@map("financial_recurrences")
+}
+
 model FinancialTransaction {
   id              String            @id @default(cuid())
   clinicId        String
   categoryId      String?
   paymentMethodId String?
   saleId          String?
+  recurrenceId    String?
   type            TransactionType
   status          TransactionStatus @default(PENDING)
   description     String
@@ -732,6 +825,8 @@ model FinancialTransaction {
   paidAt          DateTime?
   notes               String?
   contactName         String?
+  recurrenceIndex     Int?
+  recurrenceTotal     Int?
   statusConferencia   String    @default("PENDENTE")
   dataConferencia     DateTime?
   usuarioConferencia  String?
@@ -739,10 +834,11 @@ model FinancialTransaction {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
-  clinic        Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  category      FinancialCategory? @relation(fields: [categoryId], references: [id])
-  paymentMethod PaymentMethod?     @relation(fields: [paymentMethodId], references: [id])
-  sale          Sale?              @relation(fields: [saleId], references: [id])
+  clinic        Clinic                @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  category      FinancialCategory?    @relation(fields: [categoryId], references: [id])
+  paymentMethod PaymentMethod?        @relation(fields: [paymentMethodId], references: [id])
+  sale          Sale?                 @relation(fields: [saleId], references: [id])
+  recurrence    FinancialRecurrence?  @relation(fields: [recurrenceId], references: [id])
 
   @@map("financial_transactions")
 }

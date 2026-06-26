@@ -46,10 +46,16 @@ interface Conta {
   usuarioConferencia: string | null;
   motivoDivergencia: string | null;
   // Datas originais para ordenação e exibição
+  createdAt: number;
   effectiveDate: number;
   dueDateStr: string | null;
   paidAtStr: string | null;
   notes: string | null;
+  // Recorrência
+  recurrenceId: string | null;
+  recurrenceIndex: number | null;
+  recurrenceTotal: number | null;
+  recurrenceFreq: string | null;
   raw: any;
 }
 
@@ -123,10 +129,15 @@ function mapApiTransaction(t: any): Conta {
     dataConferencia:   t.dataConferencia ? new Date(t.dataConferencia).toLocaleString('pt-BR') : null,
     usuarioConferencia:t.usuarioConferencia || null,
     motivoDivergencia: t.motivoDivergencia || null,
+    createdAt:         new Date(t.createdAt).getTime(),
     effectiveDate:     effectiveDateRaw,
     dueDateStr:        t.dueDate ? new Date(t.dueDate).toLocaleDateString('pt-BR') : null,
     paidAtStr:         t.paidAt  ? new Date(t.paidAt).toLocaleString('pt-BR') : null,
     notes:             t.notes || null,
+    recurrenceId:      t.recurrenceId    || null,
+    recurrenceIndex:   t.recurrenceIndex ?? null,
+    recurrenceTotal:   t.recurrenceTotal ?? null,
+    recurrenceFreq:    t.recurrence?.frequency || null,
     raw:               t,
   };
 }
@@ -293,19 +304,47 @@ function currentUserName(): string {
 
 // ─── Painel: Registrar Recebimento (venda) ───────────────────────────────────
 interface PaymentRow { id: number; amount: string; pmId: string; date: string; }
-type SaldoAction = 'manter' | 'unica' | 'parcelar';
+
+// ─── helpers for ReceberPanel ─────────────────────────────────────────────────
+function _addFreqRec(date: Date, freq: string): Date {
+  const d = new Date(date);
+  switch (freq) {
+    case 'SEMANAL':    d.setDate(d.getDate() + 7);   break;
+    case 'QUINZENAL':  d.setDate(d.getDate() + 15);  break;
+    case 'BIMESTRAL':  d.setMonth(d.getMonth() + 2); break;
+    case 'TRIMESTRAL': d.setMonth(d.getMonth() + 3); break;
+    default:           d.setMonth(d.getMonth() + 1); break;
+  }
+  return d;
+}
+
+const RECEBER_FREQ_OPTS = [
+  { value: 'SEMANAL',    label: 'Semanal' },
+  { value: 'QUINZENAL',  label: 'Quinzenal' },
+  { value: 'MENSAL',     label: 'Mensal' },
+  { value: 'BIMESTRAL',  label: 'Bimestral' },
+  { value: 'TRIMESTRAL', label: 'Trimestral' },
+];
+
+type NegInstRow = {
+  key: string; amount: string; paymentMethodId: string;
+  count: number; firstDueDate: string; frequency: string; receivedNow: boolean;
+};
 
 function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
   const qc = useQueryClient();
 
+  // Receipt rows (what the patient pays NOW)
   const [rows, setRows] = useState<PaymentRow[]>([
     { id: 1, amount: String(sale.open), pmId: '', date: new Date().toISOString().slice(0, 10) },
   ]);
-  const [saldoAction, setSaldoAction] = useState<SaldoAction>('manter');
-  const [parcelasQtd, setParcelasQtd] = useState('2');
-  const [parcelasDue, setParcelasDue] = useState('');
-  const [error,       setError]       = useState('');
-  const [saving,      setSaving]      = useState(false);
+
+  // Negotiate unnegotiated balance
+  const [showNeg,    setShowNeg]    = useState(false);
+  const [negRows,    setNegRows]    = useState<NegInstRow[]>([{ key: 'n1', amount: '', paymentMethodId: '', count: 1, firstDueDate: new Date().toISOString().slice(0, 10), frequency: 'MENSAL', receivedNow: false }]);
+
+  const [error,  setError]  = useState('');
+  const [saving, setSaving] = useState(false);
 
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods'],
@@ -317,27 +356,28 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
     queryFn: () => financialApi.transactions(),
   });
 
+  // All INCOME transactions linked to this sale (negotiated amount)
+  const saleTxs = useMemo(() =>
+    (rawTxs as any[]).filter(t => t.saleId === sale.id && t.type === 'INCOME'),
+    [rawTxs, sale.id],
+  );
+
+  const negotiatedAmount   = saleTxs.reduce((s: number, t: any) => s + (t.amount || 0), 0);
+  const unnegotiatedBalance = Math.max(0, sale.total - negotiatedAmount);
+
   const saleHistory = useMemo(() =>
-    (rawTxs as any[])
-      .filter(t => t.saleId === sale.id && t.status === 'PAID')
-      .map(t => ({
+    saleTxs
+      .filter((t: any) => t.status === 'PAID')
+      .map((t: any) => ({
         id:    t.id,
         data:  new Date(t.paidAt || t.createdAt).toLocaleDateString('pt-BR'),
         valor: t.amount as number,
         forma: t.paymentMethod?.name || '—',
       })),
-    [rawTxs, sale.id],
+    [saleTxs],
   );
 
-  const totalPaying   = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  const saldoRestante = Math.max(0, sale.open - totalPaying);
-
-  const addRow = () => {
-    setRows(prev => [
-      ...prev,
-      { id: Date.now(), amount: String(Math.max(0, saldoRestante).toFixed(2)), pmId: '', date: new Date().toISOString().slice(0, 10) },
-    ]);
-  };
+  const totalPaying = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
 
   const updateRow = (id: number, key: keyof PaymentRow, val: string) =>
     setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: val } : r));
@@ -345,50 +385,46 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
   const removeRow = (id: number) =>
     setRows(prev => prev.filter(r => r.id !== id));
 
+  const updateNegRow = (key: string, changes: Partial<NegInstRow>) =>
+    setNegRows(prev => prev.map(r => r.key === key ? { ...r, ...changes } : r));
+
+  // Build installments for a NegInstRow
+  const buildNegInst = (r: NegInstRow) => {
+    const total = parseFloat(r.amount) || 0;
+    if (total <= 0 || !r.firstDueDate) return [];
+    const count = Math.max(1, r.count);
+    const per   = Math.round((total / count) * 100) / 100;
+    let date    = new Date(r.firstDueDate + 'T12:00:00');
+    return Array.from({ length: count }, (_, i) => {
+      const isLast = i === count - 1;
+      const amt    = isLast ? Math.round((total - per * (count - 1)) * 100) / 100 : per;
+      const iso    = date.toISOString().slice(0, 10);
+      date = _addFreqRec(date, r.frequency);
+      return { amount: amt, paymentMethodId: r.paymentMethodId || null, dueDate: iso, receivedNow: r.receivedNow };
+    });
+  };
+
+  const allNegInst = useMemo(() => negRows.flatMap(buildNegInst), [negRows]);
+  const negTotal   = negRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const negOk      = Math.abs(negTotal - unnegotiatedBalance) < 0.02;
+
   const handleConfirm = async () => {
-    if (rows.length === 0) { setError('Adicione ao menos uma linha de recebimento.'); return; }
-    if (rows.some(r => !r.amount || parseFloat(r.amount) <= 0)) { setError('Informe um valor válido em todas as linhas.'); return; }
+    if (rows.some(r => parseFloat(r.amount) <= 0)) { setError('Informe um valor válido.'); return; }
+    if (rows.some(r => !r.pmId)) { setError('Informe a forma de pagamento em todos os recebimentos.'); return; }
+    if (showNeg && !negOk) { setError(`A soma da negociação (${fmt(negTotal)}) precisa fechar o saldo não negociado (${fmt(unnegotiatedBalance)}).`); return; }
     setError('');
     setSaving(true);
     try {
       for (const row of rows) {
         await salesApi.receive(sale.id, {
-          amount: parseFloat(row.amount),
+          amount:          parseFloat(row.amount),
           paymentMethodId: row.pmId || null,
           paymentDate:     row.date || null,
         });
       }
 
-      if (saldoRestante > 0.01) {
-        if (saldoAction === 'unica') {
-          await financialApi.createTransaction({
-            type:        'INCOME',
-            status:      'PENDING',
-            description: sale.item,
-            contactName: sale.patient,
-            amount:      saldoRestante,
-            dueDate:     parcelasDue || undefined,
-          });
-        } else if (saldoAction === 'parcelar') {
-          const n = Math.max(2, parseInt(parcelasQtd) || 2);
-          const installValue = saldoRestante / n;
-          for (let i = 0; i < n; i++) {
-            let due: string | undefined;
-            if (parcelasDue) {
-              const d = new Date(parcelasDue);
-              d.setMonth(d.getMonth() + i);
-              due = d.toISOString().slice(0, 10);
-            }
-            await financialApi.createTransaction({
-              type:        'INCOME',
-              status:      'PENDING',
-              description: `${sale.item} — Parcela ${i + 1}/${n}`,
-              contactName: sale.patient,
-              amount:      installValue,
-              dueDate:     due,
-            });
-          }
-        }
+      if (showNeg && allNegInst.length > 0) {
+        await salesApi.negotiate(sale.id, { installments: allNegInst });
       }
 
       qc.invalidateQueries({ queryKey: ['all-sales'] });
@@ -403,8 +439,8 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:350 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
 
         {/* Header */}
         <div style={{ padding:'20px 28px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexShrink:0 }}>
@@ -425,9 +461,9 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
             <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:12 }}>Resumo da venda</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
               {[
-                { label:'Valor total',     value: fmt(sale.total),    color:'#09090B' },
-                { label:'Já recebido',     value: fmt(sale.received), color:'#16A34A' },
-                { label:'Saldo em aberto', value: fmt(sale.open),     color:'#DC2626' },
+                { label:'Valor total',      value: fmt(sale.total),           color:'#09090B' },
+                { label:'Já recebido',      value: fmt(sale.received),        color:'#16A34A' },
+                { label:'Não negociado',    value: fmt(unnegotiatedBalance),  color: unnegotiatedBalance > 0.01 ? '#D97706' : '#16A34A' },
               ].map(s => (
                 <div key={s.label} style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7' }}>
                   <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>{s.label}</div>
@@ -451,7 +487,7 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {saleHistory.map(h => (
+                    {saleHistory.map((h: any) => (
                       <tr key={h.id} style={{ borderTop:'1px solid #F4F4F5' }}>
                         <td style={{ padding:'9px 14px', fontSize:12, color:'#71717A' }}>{h.data}</td>
                         <td style={{ padding:'9px 14px', fontSize:13, fontWeight:600, color:'#16A34A' }}>{fmt(h.valor)}</td>
@@ -466,7 +502,7 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
 
           {/* Novo recebimento */}
           <div style={{ padding:'20px 28px', borderBottom:'1px solid #F4F4F5' }}>
-            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:12 }}>Novo recebimento</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:12 }}>Registrar recebimento agora</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {rows.map((row, idx) => (
                 <div key={row.id} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 140px 36px', gap:8, alignItems:'flex-end' }}>
@@ -476,10 +512,10 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
                       style={{ ...inp, height:36 }} placeholder="0,00" />
                   </div>
                   <div>
-                    {idx === 0 && <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Forma de pagamento</div>}
+                    {idx === 0 && <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Forma de pagamento *</div>}
                     <select value={row.pmId} onChange={e => updateRow(row.id, 'pmId', e.target.value)}
                       style={{ ...inp, height:36, cursor:'pointer' }}>
-                      <option value="">Não informado</option>
+                      <option value="">Selecione...</option>
                       {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </select>
                   </div>
@@ -494,76 +530,154 @@ function ReceberPanel({ sale, onClose }: { sale: Sale; onClose: () => void }) {
                   </button>
                 </div>
               ))}
-              <button onClick={addRow} style={{ height:34, padding:'0 12px', background:'transparent', border:'1px dashed #D4D4D8', borderRadius:8, fontSize:12, fontWeight:500, color:'#71717A', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit', alignSelf:'flex-start', marginTop:4 }}>
-                <i className="ti ti-plus" style={{ fontSize:12 }} /> Adicionar outra forma de pagamento
+              <button onClick={() => setRows(prev => [...prev, { id: Date.now(), amount: '', pmId: '', date: new Date().toISOString().slice(0, 10) }])}
+                style={{ height:34, padding:'0 12px', background:'transparent', border:'1px dashed #D4D4D8', borderRadius:8, fontSize:12, fontWeight:500, color:'#71717A', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontFamily:'inherit', alignSelf:'flex-start', marginTop:4 }}>
+                <i className="ti ti-plus" style={{ fontSize:12 }} /> Outra forma de pagamento
               </button>
             </div>
-          </div>
 
-          {/* Saldo restante */}
-          <div style={{ padding:'20px 28px' }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
-              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em' }}>Saldo restante</div>
-              <div style={{ fontSize:16, fontWeight:700, color:saldoRestante > 0.01 ? '#DC2626' : '#16A34A' }}>
-                {saldoRestante > 0.01 ? `${fmt(saldoRestante)} em aberto` : 'Quitado'}
-              </div>
-            </div>
-
-            {saldoRestante > 0.01 ? (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {([
-                  { key:'manter',   label:'Manter em aberto',      desc:'O saldo fica pendente para recebimento futuro' },
-                  { key:'unica',    label:'Registrar parcela única', desc:'Cria uma conta a receber pelo valor restante' },
-                  { key:'parcelar', label:'Parcelar saldo',         desc:'Divide o saldo em parcelas mensais' },
-                ] as { key: SaldoAction; label: string; desc: string }[]).map(opt => (
-                  <label key={opt.key} onClick={() => setSaldoAction(opt.key)}
-                    style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 14px', border:`1px solid ${saldoAction===opt.key?'#000000':'#E4E4E7'}`, borderRadius:10, cursor:'pointer', background:saldoAction===opt.key?'#FAFAFA':'#FFFFFF' }}>
-                    <div style={{ width:16, height:16, borderRadius:'50%', border:`2px solid ${saldoAction===opt.key?'#000000':'#D4D4D8'}`, background:saldoAction===opt.key?'#000000':'#FFFFFF', flexShrink:0, marginTop:2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      {saldoAction === opt.key && <div style={{ width:6, height:6, borderRadius:'50%', background:'#FFFFFF' }} />}
-                    </div>
-                    <div>
-                      <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>{opt.label}</div>
-                      <div style={{ fontSize:11, color:'#71717A', marginTop:2 }}>{opt.desc}</div>
-                    </div>
-                  </label>
-                ))}
-
-                {(saldoAction === 'unica' || saldoAction === 'parcelar') && (
-                  <div style={{ padding:'14px', background:'#F8FAFC', borderRadius:10, border:'1px solid #E4E4E7', display:'flex', flexWrap:'wrap', gap:14, marginTop:4 }}>
-                    {saldoAction === 'parcelar' && (
-                      <div>
-                        <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Número de parcelas</div>
-                        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                          <input type="number" min="2" max="60" value={parcelasQtd} onChange={e => setParcelasQtd(e.target.value)}
-                            style={{ ...inp, width:72, height:34 }} />
-                          {parseInt(parcelasQtd) >= 2 && (
-                            <span style={{ fontSize:12, color:'#374151' }}>
-                              {parcelasQtd}× de <b style={{ color:'#09090B' }}>{fmt(saldoRestante / (parseInt(parcelasQtd) || 2))}</b>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>
-                        {saldoAction === 'parcelar' ? 'Vencimento da 1ª parcela' : 'Data de vencimento'}
-                      </div>
-                      <input type="date" value={parcelasDue} onChange={e => setParcelasDue(e.target.value)}
-                        style={{ ...inp, height:34 }} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'14px', background:'#F0FDF4', borderRadius:10, border:'1px solid #BBF7D0' }}>
-                <i className="ti ti-circle-check" style={{ fontSize:20, color:'#16A34A' }} />
-                <div>
-                  <div style={{ fontSize:13, fontWeight:600, color:'#16A34A' }}>Venda totalmente quitada</div>
-                  <div style={{ fontSize:11, color:'#71717A', marginTop:2 }}>O status da venda será atualizado para "Pago".</div>
-                </div>
+            {/* Recebimento summary */}
+            {totalPaying > 0 && (
+              <div style={{ marginTop:12, padding:'10px 12px', background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:12, color:'#15803D' }}>Registrando agora</span>
+                <span style={{ fontSize:14, fontWeight:700, color:'#16A34A' }}>{fmt(totalPaying)}</span>
               </div>
             )}
           </div>
+
+          {/* Negociar saldo não negociado */}
+          {unnegotiatedBalance > 0.01 && (
+            <div style={{ padding:'20px 28px' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em' }}>Saldo não negociado</div>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#D97706', marginTop:3 }}>{fmt(unnegotiatedBalance)}</div>
+                </div>
+                <button onClick={() => {
+                  setShowNeg(prev => !prev);
+                  setNegRows([{ key: 'n1', amount: String(unnegotiatedBalance.toFixed(2)), paymentMethodId: '', count: 1, firstDueDate: new Date().toISOString().slice(0, 10), frequency: 'MENSAL', receivedNow: false }]);
+                }}
+                  style={{ height:32, padding:'0 12px', background: showNeg ? '#F4F4F5' : '#FFFBEB', border:`1px solid ${showNeg ? '#E4E4E7' : '#FDE68A'}`, borderRadius:8, fontSize:12, fontWeight:500, color: showNeg ? '#71717A' : '#A16207', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:5 }}>
+                  <i className={`ti ${showNeg ? 'ti-chevron-up' : 'ti-calendar-plus'}`} style={{ fontSize:12 }} />
+                  {showNeg ? 'Cancelar' : 'Agendar pagamentos'}
+                </button>
+              </div>
+
+              {!showNeg && (
+                <div style={{ padding:'10px 14px', background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, fontSize:12, color:'#92400E' }}>
+                  O saldo de <b>{fmt(unnegotiatedBalance)}</b> ficará na venda como saldo não negociado. Você pode agendar os pagamentos agora ou depois acessando a venda.
+                </div>
+              )}
+
+              {showNeg && (
+                <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:10, padding:'16px', display:'flex', flexDirection:'column', gap:12 }}>
+                  {negRows.map((r, ri) => (
+                    <div key={r.key} style={{ background:'#FFFFFF', borderRadius:10, border:'1px solid #FDE68A', padding:'14px' }}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:'#A16207', textTransform:'uppercase', letterSpacing:'.04em' }}>Forma {ri + 1}</span>
+                        {negRows.length > 1 && (
+                          <button onClick={() => setNegRows(prev => prev.filter(x => x.key !== r.key))}
+                            style={{ width:22, height:22, border:'none', background:'transparent', cursor:'pointer', color:'#A1A1AA' }}>
+                            <i className="ti ti-x" style={{ fontSize:12 }} />
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:8 }}>
+                        <div>
+                          <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Forma de pagamento</div>
+                          <select value={r.paymentMethodId} onChange={e => updateNegRow(r.key, { paymentMethodId: e.target.value })}
+                            style={{ ...inp, height:36, cursor:'pointer' }}>
+                            <option value="">Selecione...</option>
+                            {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Valor (R$)</div>
+                          <input type="number" min="0" step="0.01" value={r.amount} placeholder="0,00"
+                            onChange={e => updateNegRow(r.key, { amount: e.target.value })}
+                            style={{ ...inp, height:36 }} />
+                        </div>
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'72px 1fr 1fr', gap:8, marginBottom:8 }}>
+                        <div>
+                          <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Parcelas</div>
+                          <input type="number" min="1" max="120" value={r.count}
+                            onChange={e => updateNegRow(r.key, { count: Math.max(1, parseInt(e.target.value) || 1) })}
+                            style={{ ...inp, height:36, textAlign:'center' }} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>{r.count > 1 ? '1º vencimento' : 'Vencimento'}</div>
+                          <input type="date" value={r.firstDueDate}
+                            onChange={e => updateNegRow(r.key, { firstDueDate: e.target.value })}
+                            style={{ ...inp, height:36 }} />
+                        </div>
+                        {r.count > 1 && (
+                          <div>
+                            <div style={{ fontSize:11, fontWeight:500, color:'#71717A', marginBottom:5 }}>Frequência</div>
+                            <select value={r.frequency} onChange={e => updateNegRow(r.key, { frequency: e.target.value })}
+                              style={{ ...inp, height:36, cursor:'pointer' }}>
+                              {RECEBER_FREQ_OPTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={() => updateNegRow(r.key, { receivedNow: !r.receivedNow })}
+                        style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:'4px 0', fontFamily:'inherit' }}>
+                        <div style={{ width:34, height:18, borderRadius:99, background: r.receivedNow ? '#16A34A' : '#E4E4E7', position:'relative', transition:'background .15s', flexShrink:0 }}>
+                          <div style={{ position:'absolute', top:1, left: r.receivedNow ? 17 : 1, width:16, height:16, borderRadius:'50%', background:'#FFFFFF', transition:'left .15s', boxShadow:'0 1px 3px rgba(0,0,0,.2)' }} />
+                        </div>
+                        <span style={{ fontSize:12, color: r.receivedNow ? '#16A34A' : '#71717A', fontWeight:500 }}>
+                          {r.receivedNow ? 'Recebido agora' : 'Agendar para receber'}
+                        </span>
+                      </button>
+
+                      {buildNegInst(r).length > 1 && (
+                        <div style={{ marginTop:8, background:'#FFFBEB', borderRadius:8, padding:'8px 10px', border:'1px solid #FDE68A' }}>
+                          {buildNegInst(r).map((inst, ii) => (
+                            <div key={ii} style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#374151', padding:'2px 0' }}>
+                              <span style={{ color:'#71717A' }}>{ii+1}/{r.count} — {new Date(inst.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                              <span style={{ fontWeight:600 }}>{fmt(inst.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  <button onClick={() => setNegRows(prev => [...prev, { key: String(Date.now()), amount: '', paymentMethodId: '', count: 1, firstDueDate: new Date().toISOString().slice(0, 10), frequency: 'MENSAL', receivedNow: false }])}
+                    style={{ height:34, padding:'0 12px', background:'transparent', border:'1px dashed #FDE68A', borderRadius:8, fontSize:12, fontWeight:500, color:'#A16207', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:5, alignSelf:'flex-start' }}>
+                    <i className="ti ti-plus" style={{ fontSize:12 }} /> Adicionar forma
+                  </button>
+
+                  <div style={{ padding:'10px 12px', background:'#FFFFFF', borderRadius:8, border:`1px solid ${negOk ? '#BBF7D0' : '#FECACA'}` }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#71717A', marginBottom:3 }}>
+                      <span>Saldo a negociar</span><span style={{ fontWeight:600, color:'#09090B' }}>{fmt(unnegotiatedBalance)}</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#71717A' }}>
+                      <span>Soma configurada</span>
+                      <span style={{ fontWeight:600, color: negOk ? '#16A34A' : '#DC2626' }}>{fmt(negTotal)}</span>
+                    </div>
+                    {!negOk && negTotal > 0 && (
+                      <div style={{ fontSize:11, color:'#DC2626', marginTop:6 }}>Diferença de {fmt(Math.abs(negTotal - unnegotiatedBalance))}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fully negotiated */}
+          {unnegotiatedBalance <= 0.01 && sale.received < sale.total && (
+            <div style={{ padding:'16px 28px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', background:'#EFF6FF', borderRadius:10, border:'1px solid #BFDBFE' }}>
+                <i className="ti ti-info-circle" style={{ fontSize:18, color:'#2563EB' }} />
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#1D4ED8' }}>Venda já totalmente negociada</div>
+                  <div style={{ fontSize:11, color:'#374151', marginTop:2 }}>Todas as parcelas estão no fluxo de caixa. Use o fluxo de caixa para marcar cada uma como recebida.</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div style={{ margin:'0 28px 20px', fontSize:12, color:'#DC2626', padding:'9px 12px', background:'#FEF2F2', borderRadius:8, border:'1px solid #FECACA' }}>
@@ -614,6 +728,44 @@ function getDreAccounts() {
 }
 
 // ─── Painel: Nova Receita / Nova Despesa ──────────────────────────────────────
+const FREQ_OPTS = [
+  { value:'SEMANAL',    label:'Semanal (a cada 7 dias)' },
+  { value:'QUINZENAL',  label:'Quinzenal (a cada 15 dias)' },
+  { value:'MENSAL',     label:'Mensal' },
+  { value:'BIMESTRAL',  label:'Bimestral (a cada 2 meses)' },
+  { value:'TRIMESTRAL', label:'Trimestral (a cada 3 meses)' },
+  { value:'SEMESTRAL',  label:'Semestral (a cada 6 meses)' },
+  { value:'ANUAL',      label:'Anual' },
+];
+
+function addFrequency(date: Date, freq: string): Date {
+  const d = new Date(date);
+  switch (freq) {
+    case 'SEMANAL':    d.setDate(d.getDate() + 7);   break;
+    case 'QUINZENAL':  d.setDate(d.getDate() + 15);  break;
+    case 'MENSAL':     d.setMonth(d.getMonth() + 1); break;
+    case 'BIMESTRAL':  d.setMonth(d.getMonth() + 2); break;
+    case 'TRIMESTRAL': d.setMonth(d.getMonth() + 3); break;
+    case 'SEMESTRAL':  d.setMonth(d.getMonth() + 6); break;
+    case 'ANUAL':      d.setFullYear(d.getFullYear() + 1); break;
+  }
+  return d;
+}
+
+function calcRecurrenceOccurrences(startDate: string, freq: string, mode: 'count'|'until', count: number, until: string): number {
+  if (!startDate || !freq) return 0;
+  if (mode === 'count') return Math.min(Math.max(count, 2), 120);
+  if (!until) return 0;
+  let current = new Date(startDate);
+  const limit = new Date(until);
+  let n = 0;
+  while (current <= limit && n < 120) {
+    n++;
+    current = addFrequency(current, freq);
+  }
+  return Math.max(n, 0);
+}
+
 function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; onClose: () => void }) {
   const qc = useQueryClient();
   const isReceita = mode === 'receita';
@@ -630,6 +782,14 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
   const [pmId,        setPmId]          = useState('');
   const [referencia,  setReferencia]    = useState('');
   const [error,       setError]         = useState('');
+
+  // Recurrence state
+  const [enableRec,  setEnableRec]  = useState(false);
+  const [recFreq,    setRecFreq]    = useState('MENSAL');
+  const [recMode,    setRecMode]    = useState<'count'|'until'>('count');
+  const [recCount,   setRecCount]   = useState(2);
+  const [recUntil,   setRecUntil]   = useState('');
+
   const suggRef = useRef<HTMLDivElement>(null);
 
   const dreAccounts = getDreAccounts().filter(d => d.type === mode);
@@ -638,6 +798,10 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
     queryKey: ['payment-methods'],
     queryFn: () => financialApi.paymentMethods(),
   });
+
+  const recOccurrences = enableRec ? calcRecurrenceOccurrences(dueDate, recFreq, recMode, recCount, recUntil) : 0;
+  const parsedAmount = parseFloat(String(valor).replace(',', '.'));
+  const recTotal = enableRec && recOccurrences >= 2 ? (isFinite(parsedAmount) ? parsedAmount * recOccurrences : 0) : 0;
 
   // Debounced patient search
   useEffect(() => {
@@ -653,7 +817,6 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
     return () => clearTimeout(t);
   }, [contactName]);
 
-  // Close suggestions on outside click
   useEffect(() => {
     const h = (e: MouseEvent) => { if (suggRef.current && !suggRef.current.contains(e.target as Node)) setShowSugg(false); };
     document.addEventListener('mousedown', h);
@@ -676,28 +839,43 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
 
   const handleSave = () => {
     if (!descricao.trim()) { setError('Informe a descrição.'); return; }
-    const parsedAmount = parseFloat(String(valor).replace(',', '.'));
-    if (!valor.trim() || !isFinite(parsedAmount) || parsedAmount <= 0) {
+    const amount = parseFloat(String(valor).replace(',', '.'));
+    if (!valor.trim() || !isFinite(amount) || amount <= 0) {
       setError('Informe um valor válido.'); return;
+    }
+    if (enableRec) {
+      if (recOccurrences < 2) { setError('A recorrência deve gerar pelo menos 2 lançamentos.'); return; }
+      if (recOccurrences > 120) { setError('Máximo 120 lançamentos por recorrência.'); return; }
+      if (recMode === 'until' && !recUntil) { setError('Informe a data final da recorrência.'); return; }
+      if (!dueDate) { setError('Informe o vencimento da primeira parcela.'); return; }
     }
     setError('');
     const selectedDre = dreAccounts.find(d => d.id === dreId);
-    saveMut.mutate({
+    const payload: any = {
       type: isReceita ? 'INCOME' : 'EXPENSE',
       status: 'PENDING',
       description: descricao.trim(),
       contactName: contactName.trim() || undefined,
-      amount: parsedAmount,
+      amount,
       dueDate: dueDate || undefined,
       paymentMethodId: pmId || undefined,
       notes: [referencia, selectedDre ? `DRE: ${selectedDre.name}` : ''].filter(Boolean).join(' | ') || undefined,
-    });
+    };
+    if (enableRec) {
+      payload.recurrence = {
+        frequency: recFreq,
+        mode: recMode,
+        count: recMode === 'count' ? recCount : undefined,
+        until: recMode === 'until' ? recUntil : undefined,
+      };
+    }
+    saveMut.mutate(payload);
   };
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:350, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:540, background:'#FFFFFF', zIndex:351, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000, backdropFilter:'blur(2px)' }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:540, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)' }}>
 
         {/* Header */}
         <div style={{ flexShrink:0, padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -720,7 +898,7 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
 
           {/* Conta DRE */}
           <div>
-            <label style={lbl}>Conta financeira / DRE <span style={{ color:'#DC2626' }}>*</span></label>
+            <label style={lbl}>Conta financeira / DRE</label>
             <select value={dreId} onChange={e => setDreId(e.target.value)}
               style={{ ...inp, cursor:'pointer' }}>
               <option value="">Selecione a conta DRE...</option>
@@ -776,7 +954,7 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
                 placeholder="0,00" style={inp} />
             </div>
             <div>
-              <label style={lbl}>Vencimento</label>
+              <label style={lbl}>{enableRec ? 'Vencimento (1ª parcela)' : 'Vencimento'}</label>
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inp} />
             </div>
           </div>
@@ -800,6 +978,94 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
               placeholder="Ex: NF 4589, Fatura #321..." style={inp} />
           </div>
 
+          {/* ── Recorrência ── */}
+          <div style={{ borderTop:'1px solid #F4F4F5', paddingTop:16 }}>
+            {/* Toggle */}
+            <button onClick={() => setEnableRec(v => !v)}
+              style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:'inherit' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+                <div style={{ width:36, height:36, borderRadius:9, background:'#F5F3FF', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <i className="ti ti-repeat" style={{ fontSize:17, color:'#7C3AED' }} />
+                </div>
+                <div style={{ textAlign:'left' }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>Repetir lançamento</div>
+                  <div style={{ fontSize:11, color:'#71717A' }}>Gera múltiplos lançamentos automaticamente</div>
+                </div>
+              </div>
+              <div style={{ width:40, height:22, borderRadius:99, background:enableRec?'#7C3AED':'#E4E4E7', position:'relative', transition:'background .18s', flexShrink:0 }}>
+                <div style={{ position:'absolute', top:3, left:enableRec?20:3, width:16, height:16, borderRadius:'50%', background:'#FFFFFF', transition:'left .18s', boxShadow:'0 1px 3px rgba(0,0,0,.2)' }} />
+              </div>
+            </button>
+
+            {enableRec && (
+              <div style={{ marginTop:14, display:'flex', flexDirection:'column', gap:12 }}>
+                {/* Frequência */}
+                <div>
+                  <label style={lbl}>Frequência</label>
+                  <select value={recFreq} onChange={e => setRecFreq(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+                    {FREQ_OPTS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Modo de repetição */}
+                <div>
+                  <label style={lbl}>Repetir por</label>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {(['count','until'] as const).map(m => (
+                      <button key={m} onClick={() => setRecMode(m)}
+                        style={{ height:38, border:`1.5px solid ${recMode===m?'#7C3AED':'#E4E4E7'}`, borderRadius:8, background:recMode===m?'#F5F3FF':'#FFFFFF', fontSize:13, fontWeight:recMode===m?600:400, color:recMode===m?'#7C3AED':'#71717A', cursor:'pointer', fontFamily:'inherit' }}>
+                        {m==='count' ? 'Nº de vezes' : 'Até uma data'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {recMode === 'count' ? (
+                  <div>
+                    <label style={lbl}>Quantidade de lançamentos <span style={{ color:'#A1A1AA' }}>(mín. 2, máx. 120)</span></label>
+                    <input type="number" min={2} max={120} value={recCount}
+                      onChange={e => setRecCount(Math.min(120, Math.max(2, Number(e.target.value))))}
+                      style={inp} />
+                  </div>
+                ) : (
+                  <div>
+                    <label style={lbl}>Data final da recorrência</label>
+                    <input type="date" value={recUntil} onChange={e => setRecUntil(e.target.value)} style={inp} />
+                  </div>
+                )}
+
+                {/* Resumo */}
+                {recOccurrences >= 2 && (
+                  <div style={{ background:'#F5F3FF', border:'1px solid #DDD6FE', borderRadius:10, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
+                      <i className="ti ti-info-circle" style={{ fontSize:14, color:'#7C3AED' }} />
+                      <span style={{ fontSize:12, fontWeight:600, color:'#7C3AED' }}>Resumo da recorrência</span>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                      {[
+                        { label:'Frequência', value: FREQ_OPTS.find(f=>f.value===recFreq)?.label.split(' ')[0] ?? recFreq },
+                        { label:'Lançamentos', value: `${recOccurrences}x` },
+                        { label:'Valor unitário', value: isFinite(parsedAmount) ? fmt(parsedAmount) : '—' },
+                        { label:'Total gerado', value: recTotal > 0 ? fmt(recTotal) : '—' },
+                      ].map(r => (
+                        <div key={r.label}>
+                          <div style={{ fontSize:10, color:'#A78BFA', fontWeight:500, textTransform:'uppercase', letterSpacing:'.05em' }}>{r.label}</div>
+                          <div style={{ fontSize:13, fontWeight:700, color:'#5B21B6' }}>{r.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {recOccurrences > 0 && recOccurrences < 2 && (
+                  <div style={{ fontSize:12, color:'#DC2626', padding:'8px 12px', background:'#FEF2F2', borderRadius:8, border:'1px solid #FECACA' }}>
+                    A recorrência deve gerar pelo menos 2 lançamentos.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {error && (
             <div style={{ padding:'10px 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, fontSize:12, color:'#DC2626' }}>
               {error}
@@ -815,8 +1081,8 @@ function NovaLancamentoPanel({ mode, onClose }: { mode: 'receita' | 'despesa'; o
           </button>
           <button onClick={handleSave} disabled={saveMut.isPending}
             style={{ flex:2, height:40, background:saveMut.isPending?'#A1A1AA':accentColor, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:saveMut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
-            <i className={`ti ${isReceita ? 'ti-circle-arrow-down' : 'ti-circle-arrow-up'}`} style={{ fontSize:14 }} />
-            {saveMut.isPending ? 'Salvando...' : isReceita ? 'Lançar receita' : 'Lançar despesa'}
+            <i className={`ti ${enableRec ? 'ti-repeat' : isReceita ? 'ti-circle-arrow-down' : 'ti-circle-arrow-up'}`} style={{ fontSize:14 }} />
+            {saveMut.isPending ? 'Salvando...' : enableRec ? `Criar ${recOccurrences > 0 ? recOccurrences+'x ' : ''}${isReceita ? 'receitas' : 'despesas'}` : isReceita ? 'Lançar receita' : 'Lançar despesa'}
           </button>
         </div>
       </div>
@@ -858,8 +1124,8 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:400 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:401, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
@@ -903,9 +1169,9 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
               </div>
               <div style={{ gridColumn:'1/-1' }}>
-                <label style={lbl}>Forma de pagamento</label>
-                <select value={pmId} onChange={e => setPmId(e.target.value)} style={{ ...inp, height:38, cursor:'pointer' }}>
-                  <option value="">Não informado</option>
+                <label style={lbl}>Forma de pagamento <span style={{ color:'#DC2626' }}>*</span></label>
+                <select value={pmId} onChange={e => setPmId(e.target.value)} style={{ ...inp, height:38, cursor:'pointer', borderColor: !pmId ? '#FECACA' : '#E4E4E7' }}>
+                  <option value="">Selecione...</option>
                   {(paymentMethods as any[]).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
               </div>
@@ -916,7 +1182,11 @@ function PagarReceberModal({ conta, onClose }: { conta: Conta; onClose: () => vo
         {/* Footer */}
         <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA', flexShrink:0 }}>
           <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', background:'#FFFFFF', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
-          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          <button onClick={() => {
+            if (!pmId) { setError('Informe a forma de pagamento antes de confirmar.'); return; }
+            setError('');
+            saveMut.mutate();
+          }} disabled={saveMut.isPending}
             style={{ flex:2, height:40, background:saveMut.isPending?'#A1A1AA':accentColor, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:saveMut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}>
             <i className={`ti ${isPagar?'ti-check':'ti-circle-check'}`} style={{ fontSize:14 }} />
             {saveMut.isPending ? 'Registrando...' : isPagar ? 'Confirmar pagamento' : 'Confirmar recebimento'}
@@ -951,81 +1221,222 @@ function DetalhePanel({
   const isPaid    = conta.rawStatus === 'PAID';
   const isPending = conta.rawStatus === 'PENDING';
 
-  const Row = ({ label, value, valueStyle }: { label: string; value: React.ReactNode; valueStyle?: React.CSSProperties }) => (
-    <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', padding:'10px 0', borderBottom:'1px solid #F4F4F5' }}>
-      <span style={{ fontSize:12, color:'#71717A', fontWeight:500, minWidth:130, flexShrink:0 }}>{label}</span>
-      <span style={{ fontSize:13, color:'#09090B', fontWeight:500, textAlign:'right', ...valueStyle }}>{value}</span>
-    </div>
+  const { data: rawTxs = [] } = useQuery<any[]>({
+    queryKey: ['transactions'],
+    queryFn: () => financialApi.transactions(),
+  });
+
+  const sale     = conta.raw?.sale;
+  const items: any[]    = sale?.items    || [];
+  const sessions: any[] = sale?.sessions || [];
+
+  const saleHistory = useMemo(() =>
+    conta.saleId
+      ? (rawTxs as any[])
+          .filter(t => t.saleId === conta.saleId && t.status === 'PAID')
+          .map(t => ({
+            id:    t.id,
+            data:  new Date(t.paidAt || t.createdAt).toLocaleDateString('pt-BR'),
+            valor: t.amount as number,
+            forma: t.paymentMethod?.name || '—',
+          }))
+      : [],
+    [rawTxs, conta.saleId],
   );
+
+  const txCode   = `#${String(conta.id).slice(-6).toUpperCase()}`;
+  const saleCode = conta.saleId ? `#${String(conta.saleId).slice(-6).toUpperCase()}` : null;
+  const saleTotal    = sale?.total ?? 0;
+  const saleReceived = sale?.paidAmount ?? 0;
+  const saleOpen     = Math.max(0, saleTotal - saleReceived);
+
+  const detailRows = [
+    { label: 'Descrição',          value: conta.descricao },
+    { label: 'Valor',              value: (
+      <span style={{ fontSize:15, fontWeight:700, color: conta.rawType === 'INCOME' ? '#16A34A' : '#DC2626' }}>
+        {conta.rawType === 'INCOME' ? '+' : '−'}{fmt(conta.valor)}
+      </span>
+    )},
+    { label: 'Forma de pagamento', value: conta.formaPagamento },
+    ...(conta.referencia !== '—' ? [{ label: 'Referência', value: conta.referencia }] : []),
+    ...(conta.dueDateStr          ? [{ label: 'Vencimento',          value: conta.dueDateStr }] : []),
+    ...(conta.paidAtStr           ? [{ label: 'Data de pagamento',   value: conta.paidAtStr  }] : []),
+    ...(conta.notes               ? [{ label: 'Observações',         value: conta.notes      }] : []),
+  ];
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.2)', zIndex:300 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:301, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.3)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:620, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 40px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
 
         {/* Header */}
-        <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:36, height:36, borderRadius:10, background:tp.bg, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <i className={`ti ${tp.icon}`} style={{ fontSize:16, color:tp.color }} />
+        <div style={{ padding:'22px 28px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+              <div style={{ fontSize:18, fontWeight:700, color:'#09090B' }}>Lançamento {txCode}</div>
+              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:tp.bg, color:tp.color, display:'inline-flex', alignItems:'center', gap:4 }}>
+                <i className={`ti ${tp.icon}`} style={{ fontSize:10 }} /> {tp.label}
+              </span>
+              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.color }}>{st.label}</span>
             </div>
-            <div>
-              <div style={{ fontSize:15, fontWeight:700, color:'#09090B' }}>Detalhes do lançamento</div>
-              <div style={{ fontSize:12, color:'#71717A', marginTop:1 }}>{conta.pessoa}</div>
+            <div style={{ fontSize:12, color:'#71717A' }}>
+              {conta.dueDateStr ? `Vencimento ${conta.dueDateStr}` : 'Sem vencimento definido'}
+              {saleCode && <span style={{ marginLeft:10, color:'#A1A1AA' }}>· Venda {saleCode}</span>}
             </div>
           </div>
-          <button onClick={onClose} style={{ width:30, height:30, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
-            <i className="ti ti-x" style={{ fontSize:13 }} />
+          <button onClick={onClose} style={{ width:32, height:32, border:'none', background:'#F4F4F5', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A', flexShrink:0 }}>
+            <i className="ti ti-x" style={{ fontSize:14 }} />
           </button>
         </div>
 
         {/* Body */}
-        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:20 }}>
+        <div style={{ flex:1, overflowY:'auto', padding:'0 28px 28px' }}>
 
-          {/* Informações */}
-          <div>
-            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:4 }}>Informações</div>
-            <Row label="Tipo" value={
-              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:tp.bg, color:tp.color, display:'inline-flex', alignItems:'center', gap:4 }}>
-                <i className={`ti ${tp.icon}`} style={{ fontSize:10 }} /> {tp.label}
-              </span>
-            } />
-            <Row label="Pessoa / Empresa" value={conta.pessoa} />
-            <Row label="Descrição" value={conta.descricao} />
-            <Row label="Referência" value={conta.referencia} />
-            <Row label="Valor" value={
-              <span style={{ fontSize:15, fontWeight:700, color: conta.rawType === 'INCOME' ? '#16A34A' : '#DC2626' }}>
-                {conta.rawType === 'INCOME' ? '+' : '−'}{fmt(conta.valor)}
-              </span>
-            } />
-            <Row label="Forma de pagamento" value={conta.formaPagamento} />
-            <Row label="Vencimento" value={conta.dueDateStr || '—'} />
-            <Row label="Data de pagamento" value={conta.paidAtStr || '—'} />
-            {conta.notes && <Row label="Observações" value={conta.notes} />}
-            <Row label="Status" value={
-              <span style={{ fontSize:11, fontWeight:600, padding:'2px 9px', borderRadius:99, background:st.bg, color:st.color }}>{st.label}</span>
-            } />
+          {/* Contato */}
+          {conta.pessoa !== '—' && (
+            <div style={{ marginTop:22, marginBottom:18 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Contato</div>
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div style={{ width:38, height:38, borderRadius:'50%', background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:600, color:'#374151', flexShrink:0 }}>
+                  {conta.pessoa.split(' ').slice(0,2).map((n:string) => n[0]).join('')}
+                </div>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:600, color:'#09090B' }}>{conta.pessoa}</div>
+                  {conta.phone !== '—' && <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>{conta.phone}</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Detalhes do lançamento */}
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Detalhes</div>
+            <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', overflow:'hidden' }}>
+              {detailRows.map((r, i) => (
+                <div key={r.label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', borderBottom: i < detailRows.length - 1 ? '1px solid #F4F4F5' : 'none' }}>
+                  <span style={{ fontSize:12, color:'#71717A', fontWeight:500, flexShrink:0 }}>{r.label}</span>
+                  <span style={{ fontSize:13, color:'#09090B', fontWeight:500, textAlign:'right', marginLeft:16 }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Venda vinculada */}
-          {conta.saleId && (
-            <div>
-              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:4 }}>Venda vinculada</div>
-              <div onClick={() => onVerVenda?.(conta.saleId!)} style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', cursor: onVerVenda ? 'pointer' : 'default' }}
-                onMouseEnter={e => { if (onVerVenda) (e.currentTarget as HTMLElement).style.background = '#EFF6FF'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#F8FAFC'; }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <i className="ti ti-receipt" style={{ fontSize:14, color:'#71717A' }} />
-                  <span style={{ fontSize:13, fontWeight:500, color:'#09090B' }}>Venda #{String(conta.saleId).slice(-6).toUpperCase()}</span>
+          {/* Itens da venda */}
+          {items.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>
+                Itens da venda
+              </div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr style={{ background:'#F4F4F5' }}>
+                      {['Procedimento/Serviço','Qtd','Valor unit.','Desconto','Total'].map((h, i) => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign: i > 0 ? 'right' : 'left', fontSize:10, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it: any, i: number) => {
+                      const qty      = it.quantity || 1;
+                      const price    = it.unitPrice ?? it.price ?? 0;
+                      const discount = it.discount ?? 0;
+                      const itTotal  = qty * price - discount;
+                      return (
+                        <tr key={i} style={{ borderTop:'1px solid #F4F4F5' }}>
+                          <td style={{ padding:'10px 12px', fontSize:13, color:'#09090B' }}>{it.name || it.plan?.name || 'Procedimento'}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color:'#71717A', textAlign:'right' }}>{qty}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color:'#71717A', textAlign:'right' }}>{fmt(price)}</td>
+                          <td style={{ padding:'10px 12px', fontSize:12, color: discount > 0 ? '#DC2626' : '#A1A1AA', textAlign:'right' }}>{discount > 0 ? `-${fmt(discount)}` : '—'}</td>
+                          <td style={{ padding:'10px 12px', fontSize:13, fontWeight:600, color:'#09090B', textAlign:'right' }}>{fmt(itTotal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Financeiro da venda */}
+          {conta.saleId && saleTotal > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Financeiro da venda</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
+                {[
+                  { label:'Valor total',     value: fmt(saleTotal),    color:'#09090B' },
+                  { label:'Já recebido',     value: fmt(saleReceived), color:'#16A34A' },
+                  { label:'Saldo em aberto', value: fmt(saleOpen),     color: saleOpen > 0 ? '#DC2626' : '#A1A1AA' },
+                ].map(s => (
+                  <div key={s.label} style={{ background:'#F8FAFC', borderRadius:10, padding:'12px 14px', border:'1px solid #E4E4E7' }}>
+                    <div style={{ fontSize:10, color:'#A1A1AA', fontWeight:500, marginBottom:4, textTransform:'uppercase', letterSpacing:'.05em' }}>{s.label}</div>
+                    <div style={{ fontSize:16, fontWeight:700, color:s.color }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Histórico de recebimentos */}
+          {saleHistory.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Histórico de recebimentos</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', overflow:'hidden' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr style={{ background:'#F4F4F5' }}>
+                      {['Data','Valor','Forma'].map(h => (
+                        <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:10, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.06em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {saleHistory.map(h => (
+                      <tr key={h.id} style={{ borderTop:'1px solid #F4F4F5' }}>
+                        <td style={{ padding:'9px 12px', fontSize:12, color:'#71717A' }}>{h.data}</td>
+                        <td style={{ padding:'9px 12px', fontSize:13, fontWeight:600, color:'#16A34A' }}>{fmt(h.valor)}</td>
+                        <td style={{ padding:'9px 12px', fontSize:12, color:'#374151' }}>{h.forma}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Sessões */}
+          {sessions.length > 0 && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Sessões</div>
+              <div style={{ background:'#FAFAFA', borderRadius:10, border:'1px solid #E4E4E7', padding:'12px 16px', display:'flex', alignItems:'center', gap:10 }}>
+                <i className="ti ti-activity" style={{ fontSize:16, color:'#7C3AED' }} />
+                <span style={{ fontSize:13, color:'#374151' }}>{sessions.length} sessão(ões) vinculada(s)</span>
+                <span style={{ fontSize:12, color:'#A1A1AA', marginLeft:'auto' }}>
+                  {sessions.filter((s:any) => s.sessionStatus === 'REALIZADA' || s.attended).length}/{sessions.length} realizadas
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Recorrência */}
+          {conta.recurrenceId && (
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Recorrência</div>
+              <div style={{ background:'#F5F3FF', borderRadius:10, padding:'12px 14px', border:'1px solid #DDD6FE', display:'flex', alignItems:'center', gap:10 }}>
+                <i className="ti ti-repeat" style={{ fontSize:18, color:'#7C3AED', flexShrink:0 }} />
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#5B21B6' }}>Lançamento {conta.recurrenceIndex}/{conta.recurrenceTotal}</div>
+                  <div style={{ fontSize:12, color:'#7C3AED', marginTop:2 }}>
+                    {FREQ_OPTS.find(f => f.value === conta.recurrenceFreq)?.label ?? conta.recurrenceFreq ?? 'Recorrente'}
+                  </div>
                 </div>
-                <i className="ti ti-external-link" style={{ fontSize:13, color:'#2563EB' }} />
               </div>
             </div>
           )}
 
           {/* Conferência */}
-          <div>
-            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:4 }}>Conferência</div>
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#A1A1AA', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Conferência</div>
             <div style={{ background:'#FAFAFA', borderRadius:10, padding:'14px 16px', border:'1px solid #E4E4E7' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: conta.statusConferencia !== 'PENDENTE' ? 10 : 0 }}>
                 <span style={{ fontSize:12, color:'#71717A' }}>Status de conferência</span>
@@ -1049,7 +1460,7 @@ function DetalhePanel({
               {isPaid && conta.statusConferencia === 'PENDENTE' && (
                 <div style={{ display:'flex', gap:8, marginTop:12 }}>
                   <button onClick={onConferir} style={{ flex:1, height:34, background:'#16A34A', border:'none', borderRadius:8, fontSize:12, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-                    <i className="ti ti-circle-check" style={{ fontSize:13 }} /> Marcar como pago
+                    <i className="ti ti-circle-check" style={{ fontSize:13 }} /> Marcar como conferido
                   </button>
                   <button onClick={onDivergente} style={{ height:34, padding:'0 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, fontSize:12, fontWeight:600, color:'#DC2626', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
                     <i className="ti ti-alert-triangle" style={{ fontSize:13 }} /> Divergente
@@ -1066,12 +1477,18 @@ function DetalhePanel({
         </div>
 
         {/* Footer */}
-        <div style={{ padding:'14px 24px', borderTop:'1px solid #E4E4E7', background:'#FAFAFA', flexShrink:0, display:'flex', gap:8 }}>
+        <div style={{ padding:'16px 28px', borderTop:'1px solid #E4E4E7', background:'#FAFAFA', flexShrink:0, display:'flex', gap:8 }}>
           {isPending && (
             <button onClick={onPagarReceber}
-              style={{ flex:1, height:38, background: conta.rawType === 'INCOME' ? '#16A34A' : '#2563EB', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-              <i className={`ti ${conta.rawType === 'INCOME' ? 'ti-circle-arrow-down' : 'ti-circle-arrow-up'}`} style={{ fontSize:14 }} />
+              style={{ height:38, padding:'0 16px', background: conta.rawType === 'INCOME' ? '#16A34A' : '#2563EB', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+              <i className={`ti ${conta.rawType === 'INCOME' ? 'ti-cash' : 'ti-circle-arrow-up'}`} style={{ fontSize:14 }} />
               {conta.rawType === 'INCOME' ? 'Receber' : 'Pagar'}
+            </button>
+          )}
+          {conta.saleId && onVerVenda && (
+            <button onClick={() => onVerVenda!(conta.saleId!)}
+              style={{ height:38, padding:'0 14px', background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:5 }}>
+              <i className="ti ti-receipt" style={{ fontSize:13 }} /> Ver venda
             </button>
           )}
           {conta.rawStatus !== 'CANCELLED' && (
@@ -1080,7 +1497,7 @@ function DetalhePanel({
               <i className="ti ti-ban" style={{ fontSize:13 }} /> Cancelar
             </button>
           )}
-          <button onClick={onClose} style={{ height:38, padding:'0 16px', background:'#F4F4F5', border:'none', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Fechar</button>
+          <button onClick={onClose} style={{ marginLeft:'auto', height:38, padding:'0 16px', background:'#F4F4F5', border:'none', borderRadius:8, fontSize:13, fontWeight:500, color:'#374151', cursor:'pointer', fontFamily:'inherit' }}>Fechar</button>
         </div>
       </div>
     </Portal>
@@ -1111,8 +1528,8 @@ function ConfirmarConferenciaModal({ conta, onClose }: { conta: Conta; onClose: 
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
@@ -1230,8 +1647,8 @@ function DivergentModal({ conta, onClose }: { conta: Conta; onClose: () => void 
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
@@ -1329,8 +1746,8 @@ function CancelarModal({ conta, onClose }: { conta: Conta; onClose: () => void }
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
@@ -1427,8 +1844,8 @@ function AlterarVencimentoModal({ conta, onClose }: { conta: Conta; onClose: () 
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:500 }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:501, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000 }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:480, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.12)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideIn .22s ease' }}>
         {/* Header */}
         <div style={{ padding:'20px 24px', borderBottom:'1px solid #E4E4E7', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div>
@@ -1741,7 +2158,7 @@ function VendaDetailPanel({
 
         {/* Footer — ações */}
         <div style={{ padding:'16px 28px', borderTop:'1px solid #E4E4E7', display:'flex', gap:8, flexShrink:0, background:'#FAFAFA' }}>
-          {sale.open > 0 && sale.status !== 'cancelado' && (
+          {(sale.type === 'orcamento' || sale.status === 'parcial') && sale.status !== 'cancelado' && (
             <button
               onClick={() => { onClose(); onReceber(); }}
               style={{ height:38, padding:'0 16px', background:'#16A34A', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}
@@ -1784,8 +2201,8 @@ function CancelSaleModal({ sale, onClose, onConfirm, loading }: {
 
   return (
     <Portal>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:400, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:401, width:'min(90vw,460px)', background:'#FFFFFF', borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.18)', padding:'28px', fontFamily:"'Inter', system-ui, sans-serif" }}>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', zIndex:1000, backdropFilter:'blur(2px)' }} />
+      <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:1001, width:'min(90vw,460px)', background:'#FFFFFF', borderRadius:16, boxShadow:'0 20px 60px rgba(0,0,0,.18)', padding:'28px', fontFamily:"'Inter', system-ui, sans-serif" }}>
         <div style={{ width:44, height:44, borderRadius:'50%', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16 }}>
           <i className="ti ti-x" style={{ fontSize:20, color:'#DC2626' }} />
         </div>
@@ -1982,7 +2399,7 @@ function VendasTab({ sales }: { sales: Sale[] }) {
                   </td>
                   <td style={{ padding:'12px 16px' }}>
                     <TableActions
-                      primaryAction={s.open > 0 && s.status !== 'cancelado'
+                      primaryAction={(s.type === 'orcamento' || s.status === 'parcial') && s.status !== 'cancelado'
                         ? { label: 'Receber', icon: 'ti-cash', variant: 'success', onClick: () => setReceberSale(s) }
                         : { label: 'Ver', icon: 'ti-eye', variant: 'default', onClick: () => setDetailSale(s) }
                       }
@@ -1992,7 +2409,7 @@ function VendasTab({ sales }: { sales: Sale[] }) {
                           ? [{ label: 'Editar', icon: 'ti-pencil', onClick: () => { setDetailSale(s); toast('Edição disponível no painel de detalhes.', 'info'); } }]
                           : []
                         ),
-                        ...(s.open > 0 && s.status !== 'cancelado'
+                        ...((s.type === 'orcamento' || s.status === 'parcial') && s.status !== 'cancelado'
                           ? [{ label: 'Receber', icon: 'ti-cash', onClick: () => setReceberSale(s) }]
                           : []
                         ),
@@ -2277,6 +2694,31 @@ function ContasTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['transactions'] }),
   });
 
+  const pagarDiretoMut = useMutation({
+    mutationFn: (c: Conta) => {
+      const today = new Date().toISOString().slice(0, 10);
+      if (c.rawType === 'INCOME') {
+        return financialApi.receiveTransaction(c.id, {
+          amount: c.valor,
+          paymentMethodId: c.raw.paymentMethodId ?? null,
+          paidAt: today,
+        });
+      } else {
+        return financialApi.updateTransaction(c.id, {
+          status: 'PAID',
+          paidAt: today,
+          paymentMethodId: c.raw.paymentMethodId ?? null,
+          amount: c.valor,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['financial-summary'] });
+      qc.invalidateQueries({ queryKey: ['all-sales'] });
+    },
+  });
+
   const { data: rawTxs = [], isLoading } = useQuery<any[]>({
     queryKey: ['transactions'],
     queryFn:  () => financialApi.transactions(),
@@ -2324,7 +2766,13 @@ function ContasTab() {
         c.pessoa.toLowerCase().includes(search.toLowerCase()) ||
         c.descricao.toLowerCase().includes(search.toLowerCase())
       )
-      .sort((a, b) => b.effectiveDate - a.effectiveDate);
+      .sort((a, b) => {
+        const aPending = a.rawStatus === 'PENDING';
+        const bPending = b.rawStatus === 'PENDING';
+        if (aPending && bPending) return a.createdAt - b.createdAt;  // aberto: mais antigo primeiro
+        if (aPending !== bPending) return aPending ? -1 : 1;          // aberto antes de pago
+        return b.effectiveDate - a.effectiveDate;                      // pago: mais recente primeiro
+      });
   }, [contas, tab, search, pStart, pEnd]);
 
   useEffect(() => { setSelected(new Set()); }, [tab, search]);
@@ -2489,8 +2937,8 @@ function ContasTab() {
       {isLoading ? (
         <SectionLoader label="Carregando movimentações..." />
       ) : (
-        <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', overflow:'hidden' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+        <div style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:800 }}>
             <thead>
               <tr style={{ background:'#F4F4F5', borderBottom:'1px solid #E4E4E7' }}>
                 <th style={{ padding:'10px 12px', width:36 }}>
@@ -2500,19 +2948,17 @@ function ContasTab() {
                     style={{ cursor:'pointer', accentColor:'#000000', width:14, height:14 }} />
                 </th>
                 {[
-                  { h:'Data',        align:'left'   },
-                  { h:'Tipo',        align:'left'   },
-                  { h:'Pessoa',      align:'left'   },
-                  { h:'Descrição',   align:'left'   },
-                  { h:'Referência',  align:'left'   },
-                  { h:'Forma',       align:'left'   },
-                  { h:'Valor',       align:'right'  },
-                  { h:'Saldo',       align:'right'  },
-                  { h:'Status',      align:'left'   },
-                  { h:'Conferência', align:'left'   },
-                  { h:'Ações',       align:'right'  },
+                  { h:'Data',      align:'left'  },
+                  { h:'Tipo',      align:'left'  },
+                  { h:'Contato',   align:'left'  },
+                  { h:'Descrição', align:'left'  },
+                  { h:'Forma',     align:'left'  },
+                  { h:'Valor',     align:'right' },
+                  { h:'Saldo',     align:'right' },
+                  { h:'Status',    align:'left'  },
+                  { h:'Ações',     align:'right' },
                 ].map(col => (
-                  <th key={col.h} style={{ padding:'10px 14px', textAlign:col.align as any, fontSize:11, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap' }}>{col.h}</th>
+                  <th key={col.h} style={{ padding:'10px 14px', textAlign:col.align as any, fontSize:11, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.06em', whiteSpace:'nowrap', ...(col.h==='Ações' ? { width:160, minWidth:160 } : {}) }}>{col.h}</th>
                 ))}
               </tr>
             </thead>
@@ -2525,6 +2971,8 @@ function ContasTab() {
                 const isPaid     = c.rawStatus === 'PAID';
                 const isPending  = c.rawStatus === 'PENDING';
                 const isSelected = selected.has(c.id);
+
+                const hasPM = !!c.raw.paymentMethodId;
 
                 let actionBtn;
                 if (isPaid && c.statusConferencia === 'PENDENTE') {
@@ -2541,11 +2989,21 @@ function ContasTab() {
                       <i className="ti ti-alert-triangle" style={{ fontSize:11 }} /> Resolver
                     </button>
                   );
-                } else if (isPending && c.rawType === 'EXPENSE') {
+                } else if (isPending && hasPM) {
+                  const isIncome = c.rawType === 'INCOME';
+                  actionBtn = (
+                    <button onClick={() => pagarDiretoMut.mutate(c)} disabled={pagarDiretoMut.isPending}
+                      style={{ height:28, padding:'0 10px', background: isIncome ? '#16A34A' : '#2563EB', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:4, whiteSpace:'nowrap', opacity: pagarDiretoMut.isPending ? 0.6 : 1 }}>
+                      <i className={`ti ${isIncome ? 'ti-circle-arrow-down' : 'ti-circle-check'}`} style={{ fontSize:11 }} />
+                      {isIncome ? 'Marcar como recebido' : 'Marcar como pago'}
+                    </button>
+                  );
+                } else if (isPending) {
+                  const isIncome = c.rawType === 'INCOME';
                   actionBtn = (
                     <button onClick={() => setPagarReceberConta(c)}
-                      style={{ height:28, padding:'0 10px', background:'#2563EB', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
-                      Pagar
+                      style={{ height:28, padding:'0 10px', background: isIncome ? '#16A34A' : '#2563EB', border:'none', borderRadius:7, fontSize:11, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                      {isIncome ? 'Receber' : 'Pagar'}
                     </button>
                   );
                 } else {
@@ -2583,9 +3041,13 @@ function ContasTab() {
 
                     <td style={{ padding:'11px 14px', fontSize:12, color:'#374151', maxWidth:160 }}>
                       <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{c.descricao}</div>
+                      {c.recurrenceId && (
+                        <span style={{ fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:99, background:'#F5F3FF', color:'#7C3AED', display:'inline-flex', alignItems:'center', gap:3, marginTop:2 }}>
+                          <i className="ti ti-repeat" style={{ fontSize:9 }} />
+                          {c.recurrenceIndex}/{c.recurrenceTotal}
+                        </span>
+                      )}
                     </td>
-
-                    <td style={{ padding:'11px 14px', fontSize:11, color:'#A1A1AA', whiteSpace:'nowrap' }}>{c.referencia}</td>
 
                     <td style={{ padding:'11px 14px', fontSize:12, color:'#71717A', whiteSpace:'nowrap' }}>{c.formaPagamento}</td>
 
@@ -2605,13 +3067,7 @@ function ContasTab() {
                       <span style={{ fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:99, background:st.bg, color:st.color, whiteSpace:'nowrap' }}>{st.label}</span>
                     </td>
 
-                    <td style={{ padding:'11px 14px' }}>
-                      <span style={{ fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:99, background:cs.bg, color:cs.color, display:'inline-flex', alignItems:'center', gap:3, whiteSpace:'nowrap' }}>
-                        <i className={`ti ${cs.icon}`} style={{ fontSize:10 }} /> {cs.label}
-                      </span>
-                    </td>
-
-                    <td style={{ padding:'11px 14px' }}>
+                    <td style={{ padding:'11px 14px', width:160, minWidth:160 }}>
                       <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4, position:'relative' }}>
                         {actionBtn}
                         <div style={{ position:'relative' }}>
@@ -2632,7 +3088,7 @@ function ContasTab() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={12} style={{ padding:'48px 16px', textAlign:'center' }}>
+                  <td colSpan={10} style={{ padding:'48px 16px', textAlign:'center' }}>
                     <i className="ti ti-receipt-off" style={{ fontSize:36, color:'#D1D5DB', display:'block', marginBottom:10 }} />
                     <div style={{ fontSize:14, fontWeight:600, color:'#6B7280', marginBottom:4 }}>Nenhuma movimentação encontrada</div>
                     <div style={{ fontSize:12, color:'#9CA3AF' }}>As movimentações aparecem automaticamente quando pagamentos são registrados</div>

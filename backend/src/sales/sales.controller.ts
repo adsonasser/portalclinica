@@ -33,6 +33,11 @@ export class SalesController {
     return this.salesService.receive(clinicId, id, dto);
   }
 
+  @Post(':id/negotiate')
+  negotiate(@ClinicId() clinicId: string, @Param('id') id: string, @Body() dto: any) {
+    return this.salesService.negotiate(clinicId, id, dto);
+  }
+
   @Post(':id/generate-sessions')
   generateSessions(@ClinicId() clinicId: string, @Param('id') id: string) {
     return this.salesService.generateSessions(clinicId, id);

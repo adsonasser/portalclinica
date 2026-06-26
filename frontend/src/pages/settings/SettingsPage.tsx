@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi, contactTypesApi } from '../../services/api';
+import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi, contactTypesApi, settingsApi, leadsApi } from '../../services/api';
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { key: 'contracts',       label: 'Contratos',                icon: 'ti-file-certificate' },
   { key: 'personalization', label: 'Personalização',           icon: 'ti-palette' },
   { key: 'integrations',   label: 'Integrações',               icon: 'ti-plug-connected' },
+  { key: 'crm',            label: 'CRM',                      icon: 'ti-layout-kanban' },
 ];
 
 // ─── Module Status ────────────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ const MODULE_STATUS: ModInfo[] = [
   { key: 'financial',       label: 'Financeiro',               icon: 'ti-cash',                 color: '#A16207', bg: '#FEFCE8', status: 'parcial',         detail: 'Contas DRE configuradas',               pending: ['Formas de pagamento'],                 lastUpdate: '05/06/2026' },
   { key: 'contracts',       label: 'Contratos',                icon: 'ti-file-certificate',     color: '#7C3AED', bg: '#F5F3FF', status: 'nao_configurado', detail: 'Nenhum modelo cadastrado',              pending: ['Modelos de contrato'],                 lastUpdate: '—' },
   { key: 'personalization', label: 'Personalização',           icon: 'ti-palette',              color: '#BE185D', bg: '#FDF2F8', status: 'pendente',        detail: 'Configuração não iniciada',             pending: ['Logo', 'Cores'],                      lastUpdate: '—' },
+  { key: 'crm',            label: 'CRM',                      icon: 'ti-layout-kanban',        color: '#7C3AED', bg: '#F5F3FF', status: 'pendente',        detail: 'Funis e origens de lead',               pending: ['Funis', 'Origens'],                    lastUpdate: '—' },
 ];
 
 const STATUS_CFG: Record<ModStatus, { bg: string; color: string; label: string; icon: string }> = {
@@ -79,6 +81,12 @@ const MODULE_DETAIL: Record<string, { icon: string; label: string; desc: string;
   ],
   contracts: [
     { icon: 'ti-file-certificate', label: 'Modelos de contrato', desc: 'Crie e gerencie modelos de contrato para procedimentos e serviços', subKey: 'contract-templates' },
+  ],
+  crm: [
+    { icon: 'ti-layout-kanban',  label: 'Funis de vendas',     desc: 'Crie funis com etapas personalizadas para gestão de leads',     subKey: 'crm-funnels'       },
+    { icon: 'ti-map-pin',        label: 'Origens de lead',     desc: 'Canais de captação: Instagram, Google, Indicação, etc.',        subKey: 'crm-sources'       },
+    { icon: 'ti-x-circle',       label: 'Motivos de perda',    desc: 'Motivos cadastrados para marcar leads como perdidos',           subKey: 'crm-loss-reasons'  },
+    { icon: 'ti-file-import',    label: 'Importações',         desc: 'Importe leads via planilha CSV com mapeamento de colunas',      subKey: 'crm-imports'       },
   ],
 };
 
@@ -467,18 +475,32 @@ function DocTemplatesView({ onBack, parentLabel, title, subtitle, mc, lockType, 
 }
 
 // ─── Clínica: Informações cadastrais ─────────────────────────────────────────
-const CLINIC_LS = 'pcl_clinic_info';
-type ClinicInfo = { name: string; cnpj: string; phone: string; email: string; address: string; city: string; state: string; zip: string; website: string };
-const CLINIC_DEFAULTS: ClinicInfo = { name: '', cnpj: '', phone: '', email: '', address: '', city: '', state: '', zip: '', website: '' };
-function loadClinicInfo(): ClinicInfo { try { const r = localStorage.getItem(CLINIC_LS); if (r) return JSON.parse(r); } catch {} return CLINIC_DEFAULTS; }
+type ClinicInfo = { name: string; cnpj: string; phone: string; email: string; address: string; city: string; state: string; responsavel: string };
+const CLINIC_DEFAULTS: ClinicInfo = { name: '', cnpj: '', phone: '', email: '', address: '', city: '', state: '', responsavel: '' };
 
 function ClinicInfoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
-  const [info, setInfo] = useState<ClinicInfo>(loadClinicInfo);
-  const [saved, setSaved] = useState(false);
-  function handleSave() { localStorage.setItem(CLINIC_LS, JSON.stringify(info)); setSaved(true); setTimeout(() => setSaved(false), 2500); }
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: remote, isLoading } = useQuery<ClinicInfo>({
+    queryKey: ['clinic-info'],
+    queryFn: settingsApi.getClinicInfo,
+  });
+  const [info, setInfo] = useState<ClinicInfo>(CLINIC_DEFAULTS);
+  useEffect(() => { if (remote) setInfo(remote); }, [remote]);
+  const saveMut = useMutation({
+    mutationFn: (d: ClinicInfo) => settingsApi.updateClinicInfo(d),
+    onSuccess: (updated) => {
+      setInfo(updated);
+      qc.invalidateQueries({ queryKey: ['clinic-info'] });
+      qc.invalidateQueries({ queryKey: ['home-summary'] });
+      toast('Dados salvos com sucesso!', 'success');
+    },
+    onError: () => toast('Erro ao salvar dados', 'error'),
+  });
+  if (isLoading) return <div style={{ padding: 40, color: '#71717A', fontSize: 13 }}>Carregando...</div>;
   return (
-    <SubView title="Informações cadastrais" desc="Dados cadastrais da clínica exibidos em documentos e relatórios." icon="ti-info-circle" iconBg={mc.bg} iconColor={mc.color} parentLabel="Clínica" onBack={onBack}
-      actions={<button onClick={handleSave} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>{saved ? <><i className="ti ti-check" style={{ fontSize: 14 }} /> Salvo!</> : 'Salvar alterações'}</button>}>
+    <SubView title="Informações cadastrais" desc="Dados cadastrais da clínica — cidade e estado são usados na previsão do tempo e relatórios." icon="ti-info-circle" iconBg={mc.bg} iconColor={mc.color} parentLabel="Clínica" onBack={onBack}
+      actions={<button onClick={() => saveMut.mutate(info)} disabled={saveMut.isPending} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, opacity: saveMut.isPending ? 0.6 : 1 }}>{saveMut.isPending ? 'Salvando...' : <><i className="ti ti-device-floppy" style={{ fontSize: 14 }} /> Salvar alterações</>}</button>}>
       <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E4E4E7', padding: '24px 28px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div style={{ gridColumn: 'span 2' }}><label style={lblStyle}>Nome da clínica</label><input value={info.name} onChange={e => setInfo(v => ({ ...v, name: e.target.value }))} placeholder="Ex: Clínica São Paulo" style={inpStyle} /></div>
@@ -488,8 +510,7 @@ function ClinicInfoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
           <div style={{ gridColumn: 'span 2' }}><label style={lblStyle}>Endereço</label><input value={info.address} onChange={e => setInfo(v => ({ ...v, address: e.target.value }))} placeholder="Rua, número, complemento" style={inpStyle} /></div>
           <div><label style={lblStyle}>Cidade</label><input value={info.city} onChange={e => setInfo(v => ({ ...v, city: e.target.value }))} placeholder="São Paulo" style={inpStyle} /></div>
           <div><label style={lblStyle}>Estado</label><input value={info.state} onChange={e => setInfo(v => ({ ...v, state: e.target.value }))} placeholder="SP" style={inpStyle} /></div>
-          <div><label style={lblStyle}>CEP</label><input value={info.zip} onChange={e => setInfo(v => ({ ...v, zip: e.target.value }))} placeholder="00000-000" style={inpStyle} /></div>
-          <div><label style={lblStyle}>Website</label><input value={info.website} onChange={e => setInfo(v => ({ ...v, website: e.target.value }))} placeholder="https://clinica.com.br" style={inpStyle} /></div>
+          <div style={{ gridColumn: 'span 2' }}><label style={lblStyle}>Responsável</label><input value={info.responsavel} onChange={e => setInfo(v => ({ ...v, responsavel: e.target.value }))} placeholder="Nome do responsável / CRM" style={inpStyle} /></div>
         </div>
       </div>
     </SubView>
@@ -1102,6 +1123,8 @@ function AccessProfilesView({ onBack, mc }: { onBack: () => void; mc: ModInfo })
 // ─── Usuários ────────────────────────────────────────────────────────────────
 const USER_ROLES = [{ value: 'ADMIN', label: 'Administrador' }, { value: 'PROFESSIONAL', label: 'Profissional' }, { value: 'RECEPTIONIST', label: 'Recepcionista' }, { value: 'FINANCIAL', label: 'Financeiro' }];
 const ROLE_COLORS: Record<string, { bg: string; color: string }> = { ADMIN: { bg: '#F5F3FF', color: '#7C3AED' }, PROFESSIONAL: { bg: '#EFF6FF', color: '#2563EB' }, RECEPTIONIST: { bg: '#F0FDF4', color: '#16A34A' }, FINANCIAL: { bg: '#FFFBEB', color: '#D97706' } };
+const AGENDA_COLORS = ['#7C3AED','#2563EB','#16A34A','#EC4899','#D97706','#DC2626','#0891B2','#EA580C','#65A30D','#6B7280'];
+const SPECIALTY_SUGGESTIONS = ['Médico(a)','Nutricionista','Psicólogo(a)','Fisioterapeuta','Técnico(a) de enfermagem','Enfermeiro(a)','Fonoaudiólogo(a)','Terapeuta ocupacional','Administrativo'];
 
 function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const qc = useQueryClient();
@@ -1113,6 +1136,8 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const [fPass, setFPass] = useState('');
   const [fRole, setFRole] = useState('PROFESSIONAL');
   const [fProfileId, setFProfileId] = useState('');
+  const [fSpecialty, setFSpecialty] = useState('');
+  const [fSpecialtySugg, setFSpecialtySugg] = useState(false);
   const [fIsProfessional, setFIsProfessional] = useState(false);
   const [fShowInAgenda, setFShowInAgenda] = useState(true);
   const [fProfColor, setFProfColor] = useState('#7C3AED');
@@ -1123,7 +1148,7 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: any }) => usersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); qc.invalidateQueries({ queryKey: ['agenda-professionals'] }); setShowForm(false); }, onError: (e: any) => { const r = e?.response?.data?.message; setFErr(Array.isArray(r) ? r.join(' · ') : (r || 'Erro.')); } });
   const removeMut = useMutation({ mutationFn: (id: string) => usersApi.remove(id), onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); setDeleteConfirm(null); } });
 
-  function openNew() { setEditItem(null); setFName(''); setFEmail(''); setFPass(''); setFRole('PROFESSIONAL'); setFProfileId(''); setFIsProfessional(false); setFShowInAgenda(true); setFProfColor('#7C3AED'); setFErr(''); setShowForm(true); }
+  function openNew() { setEditItem(null); setFName(''); setFEmail(''); setFPass(''); setFRole('PROFESSIONAL'); setFProfileId(''); setFSpecialty(''); setFIsProfessional(false); setFShowInAgenda(true); setFProfColor('#7C3AED'); setFErr(''); setShowForm(true); }
   function openEdit(u: any) {
     setEditItem(u);
     setFName(u.name || '');
@@ -1131,20 +1156,26 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     setFPass('');
     setFRole(u.role || 'PROFESSIONAL');
     setFProfileId(u.accessProfileId || '');
+    setFSpecialty(u.professional?.specialty || '');
     setFIsProfessional(!!(u.professional?.active));
     setFShowInAgenda(u.professional?.showInAgenda ?? true);
     setFProfColor(u.professional?.color || '#7C3AED');
     setFErr('');
     setShowForm(true);
   }
+  function handleToggleProfessional() {
+    const next = !fIsProfessional;
+    setFIsProfessional(next);
+    if (next && !fShowInAgenda) setFShowInAgenda(true);
+  }
   function handleSave() {
     if (!fName.trim()) { setFErr('Informe o nome.'); return; }
     if (!editItem && !fEmail.trim()) { setFErr('Informe o e-mail.'); return; }
     if (!editItem && fPass.length < 6) { setFErr('Senha mínima: 6 caracteres.'); return; }
     if (editItem) {
-      updateMut.mutate({ id: editItem.id, data: { name: fName.trim(), role: fRole, accessProfileId: fProfileId || null, isProfessional: fIsProfessional, showInAgenda: fIsProfessional ? fShowInAgenda : undefined, profColor: fIsProfessional ? fProfColor : undefined } });
+      updateMut.mutate({ id: editItem.id, data: { name: fName.trim(), role: fRole, accessProfileId: fProfileId || null, specialty: fSpecialty.trim() || null, isProfessional: fIsProfessional, showInAgenda: fIsProfessional ? fShowInAgenda : undefined, profColor: fIsProfessional ? fProfColor : undefined } });
     } else {
-      createMut.mutate({ name: fName.trim(), email: fEmail.trim(), password: fPass, role: fRole, accessProfileId: fProfileId || null });
+      createMut.mutate({ name: fName.trim(), email: fEmail.trim(), password: fPass, role: fRole, accessProfileId: fProfileId || null, specialty: fSpecialty.trim() || null, isProfessional: fIsProfessional, showInAgenda: fIsProfessional ? fShowInAgenda : true, profColor: fIsProfessional ? fProfColor : undefined });
     }
   }
   const roleLabel = (r: string) => USER_ROLES.find(x => x.value === r)?.label || r;
@@ -1156,6 +1187,8 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
       <div style={{ position: 'absolute', top: 3, left: on ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
     </button>
   );
+
+  const sectionHdr: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 };
 
   return (
     <SubView title="Usuários" desc="Gerencie os usuários com acesso ao sistema." icon="ti-users" iconBg={mc.bg} iconColor={mc.color} parentLabel="Usuários e permissões" onBack={onBack}
@@ -1174,7 +1207,18 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
                 const inAgenda = isPro && (u.professional?.showInAgenda ?? true);
                 return (
                   <tr key={u.id} style={{ borderBottom: '1px solid #F4F4F5' }} onMouseEnter={e => (e.currentTarget.style.background = '#F9FAFB')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ padding: '12px 16px' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ position: 'relative', flexShrink: 0 }}><div style={{ width: 32, height: 32, borderRadius: '50%', background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#18181B' }}>{initials(u.name)}</div>{isPro && u.professional?.color && <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: u.professional.color, border: '2px solid #fff' }} />}</div><span style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{u.name}</span></div></td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#F4F4F5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#18181B' }}>{initials(u.name)}</div>
+                          {isPro && u.professional?.color && <div style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: u.professional.color, border: '2px solid #fff' }} />}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>{u.name}</div>
+                          {u.professional?.specialty && <div style={{ fontSize: 11, color: '#71717A' }}>{u.professional.specialty}</div>}
+                        </div>
+                      </div>
+                    </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: '#71717A' }}>{u.email}</td>
                     <td style={{ padding: '12px 16px' }}>
                       {u.accessProfile
@@ -1210,72 +1254,121 @@ function UsersView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         <Portal>
           <>
             <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.3)', zIndex: 9000, backdropFilter: 'blur(2px)' }} />
-            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 440, background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif" }}>
-              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{editItem ? 'Editar usuário' : 'Novo usuário'}</div>
-              <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
-            </div>
-            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div><label style={lblStyle}>Nome *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Nome completo" style={inpStyle} /></div>
-              {!editItem && <div><label style={lblStyle}>E-mail *</label><input type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="email@clinica.com.br" style={inpStyle} /></div>}
-              {!editItem && <div><label style={lblStyle}>Senha *</label><input type="password" value={fPass} onChange={e => setFPass(e.target.value)} placeholder="Mínimo 6 caracteres" style={inpStyle} /></div>}
-              <div><label style={lblStyle}>Função (sistema)</label><select value={fRole} onChange={e => setFRole(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }}>{USER_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-              <div>
-                <label style={lblStyle}>Perfil de acesso</label>
-                <select value={fProfileId} onChange={e => setFProfileId(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }}>
-                  <option value="">— Sem perfil vinculado —</option>
-                  {(profiles as any[]).filter((p: any) => p.active).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                {!fProfileId && <div style={{ fontSize: 11, color: '#D97706', marginTop: 4 }}>Sem perfil: o usuário não terá acesso ao sistema.</div>}
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 480, maxHeight: '90vh', background: '#fff', borderRadius: 14, zIndex: 9001, boxShadow: '0 20px 60px rgba(0,0,0,.15)', fontFamily: "'Inter', system-ui, sans-serif", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Header */}
+              <div style={{ padding: '18px 22px', borderBottom: '1px solid #E4E4E7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ti ti-user-plus" style={{ fontSize: 16, color: '#7C3AED' }} />
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#09090B' }}>{editItem ? 'Editar usuário' : 'Novo usuário'}</div>
+                </div>
+                <button onClick={() => setShowForm(false)} style={{ width: 26, height: 26, border: 'none', background: '#F4F4F5', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><i className="ti ti-x" style={{ fontSize: 12, color: '#71717A' }} /></button>
               </div>
-              {editItem && (
+
+              {/* Body */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                {/* Bloco 1: Dados de acesso */}
+                <div>
+                  <div style={sectionHdr}>Dados de acesso</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div><label style={lblStyle}>Nome *</label><input value={fName} onChange={e => setFName(e.target.value)} placeholder="Nome completo" style={inpStyle} /></div>
+                    {!editItem && <div><label style={lblStyle}>E-mail *</label><input type="email" value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="email@clinica.com.br" style={inpStyle} /></div>}
+                    {!editItem && <div><label style={lblStyle}>Senha *</label><input type="password" value={fPass} onChange={e => setFPass(e.target.value)} placeholder="Mínimo 6 caracteres" style={inpStyle} /></div>}
+                  </div>
+                </div>
+
+                {/* Bloco 2: Perfil e especialidade */}
+                <div>
+                  <div style={sectionHdr}>Perfil e especialidade</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={lblStyle}>Perfil de acesso *</label>
+                      <select value={fProfileId} onChange={e => setFProfileId(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }}>
+                        <option value="">— Selecionar perfil —</option>
+                        {(profiles as any[]).filter((p: any) => p.active).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      {!fProfileId && <div style={{ fontSize: 11, color: '#D97706', marginTop: 4 }}>Sem perfil: o usuário não terá acesso ao sistema.</div>}
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <label style={lblStyle}>Especialidade <span style={{ fontWeight: 400, color: '#A1A1AA' }}>(opcional)</span></label>
+                      <input
+                        value={fSpecialty}
+                        onChange={e => { setFSpecialty(e.target.value); setFSpecialtySugg(true); }}
+                        onFocus={() => setFSpecialtySugg(true)}
+                        onBlur={() => setTimeout(() => setFSpecialtySugg(false), 150)}
+                        placeholder="Ex: Nutricionista, Psicólogo(a)..."
+                        style={inpStyle}
+                      />
+                      {fSpecialtySugg && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #E4E4E7', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.08)', zIndex: 10, marginTop: 2, overflow: 'hidden' }}>
+                          {SPECIALTY_SUGGESTIONS.filter(s => s.toLowerCase().includes(fSpecialty.toLowerCase()) && s !== fSpecialty).slice(0, 6).map(s => (
+                            <button key={s} onMouseDown={() => { setFSpecialty(s); setFSpecialtySugg(false); }}
+                              style={{ width: '100%', padding: '8px 12px', textAlign: 'left', border: 'none', background: 'transparent', fontSize: 13, color: '#09090B', cursor: 'pointer', display: 'block' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#F4F4F5')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bloco 3: Atendimento e agenda */}
                 <div style={{ background: '#F9F9F9', border: '1px solid #E4E4E7', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.06em' }}>Configurações de agenda</div>
+                  <div style={sectionHdr}>Atendimento e agenda</div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>É profissional de atendimento?</div>
-                      <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Aparece como opção de profissional na agenda</div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Profissional de atendimento</div>
+                      <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Pode ser selecionado em atendimentos e prontuário</div>
                     </div>
-                    <Toggle on={fIsProfessional} onChange={() => setFIsProfessional(v => !v)} />
+                    <Toggle on={fIsProfessional} onChange={handleToggleProfessional} />
                   </div>
                   {fIsProfessional && (
                     <>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ borderTop: '1px solid #E4E4E7', paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Aparece na agenda?</div>
-                          <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Exibir coluna deste profissional na agenda</div>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B' }}>Aparece na agenda</div>
+                          <div style={{ fontSize: 12, color: '#71717A', marginTop: 1 }}>Exibir como coluna disponível na agenda</div>
                         </div>
                         <Toggle on={fShowInAgenda} onChange={() => setFShowInAgenda(v => !v)} />
                       </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B', marginBottom: 8 }}>Cor na agenda</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {['#7C3AED','#2563EB','#16A34A','#EC4899','#D97706','#DC2626','#0891B2','#EA580C','#65A30D','#6B7280'].map(c => (
-                            <button key={c} onClick={() => setFProfColor(c)}
-                              style={{ width: 28, height: 28, borderRadius: 8, background: c, border: fProfColor === c ? '3px solid #000' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', boxSizing: 'border-box' }}>
-                              {fProfColor === c && <i className="ti ti-check" style={{ fontSize: 13, color: '#fff' }} />}
-                            </button>
-                          ))}
-                          <input type="color" value={fProfColor} onChange={e => setFProfColor(e.target.value)}
-                            title="Cor personalizada"
-                            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #E4E4E7', padding: 0, cursor: 'pointer', background: 'none' }} />
+                      {fShowInAgenda && (
+                        <div style={{ borderTop: '1px solid #E4E4E7', paddingTop: 12 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#09090B', marginBottom: 10 }}>Cor na agenda</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            {AGENDA_COLORS.map(c => (
+                              <button key={c} onClick={() => setFProfColor(c)}
+                                style={{ width: 28, height: 28, borderRadius: 8, background: c, border: fProfColor === c ? '3px solid #000' : '2px solid transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', boxSizing: 'border-box' }}>
+                                {fProfColor === c && <i className="ti ti-check" style={{ fontSize: 13, color: '#fff' }} />}
+                              </button>
+                            ))}
+                            <input type="color" value={fProfColor} onChange={e => setFProfColor(e.target.value)}
+                              title="Cor personalizada"
+                              style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid #E4E4E7', padding: 0, cursor: 'pointer', background: 'none' }} />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: fProfColor }} />
+                            <span style={{ fontSize: 11, color: '#71717A' }}>Cor selecionada: {fProfColor}</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: fProfColor }} />
-                          <span style={{ fontSize: 11, color: '#71717A' }}>Cor selecionada: {fProfColor}</span>
-                        </div>
-                      </div>
+                      )}
                     </>
                   )}
                 </div>
-              )}
-              {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+
+                {fErr && <div style={{ fontSize: 12, color: '#DC2626', padding: '8px 10px', background: '#FEF2F2', borderRadius: 7 }}>{fErr}</div>}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA', flexShrink: 0 }}>
+                <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', opacity: createMut.isPending || updateMut.isPending ? 0.6 : 1 }}>{editItem ? 'Salvar alterações' : 'Criar usuário'}</button>
+              </div>
             </div>
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #E4E4E7', display: 'flex', gap: 8, background: '#FAFAFA' }}>
-              <button onClick={() => setShowForm(false)} style={{ flex: 1, height: 38, border: '1px solid #E4E4E7', background: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 500, color: '#374151', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
-              <button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} style={{ flex: 2, height: 38, background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>{editItem ? 'Salvar' : 'Criar usuário'}</button>
-            </div>
-          </div>
           </>
         </Portal>
       )}
@@ -2093,7 +2186,7 @@ function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo
 export function SettingsPage() {
   const [searchParams] = useSearchParams();
   const [activeNav,   setActiveNav]   = useState(() => searchParams.get('section') || 'overview');
-  const [openSubItem, setOpenSubItem] = useState<string | null>(null);
+  const [openSubItem, setOpenSubItem] = useState<string | null>(() => searchParams.get('sub') || null);
 
   const goTo = (key: string) => { setActiveNav(key); setOpenSubItem(null); };
 
@@ -2133,6 +2226,10 @@ export function SettingsPage() {
         case 'payment-methods':     return <PaymentMethodsView onBack={() => setOpenSubItem(null)} mc={mc} />;
         case 'receipt-models':      return <PlaceholderSubView onBack={() => setOpenSubItem(null)} parentLabel={parentLabel} title="Modelos de recibo" mc={mc} />;
         case 'contract-templates':  return <ContractTemplatesView onBack={() => setOpenSubItem(null)} mc={mc} />;
+        case 'crm-funnels':         return <CrmFunnelsView onBack={() => setOpenSubItem(null)} />;
+        case 'crm-sources':         return <CrmSourcesView onBack={() => setOpenSubItem(null)} />;
+        case 'crm-loss-reasons':    return <CrmLossReasonsView onBack={() => setOpenSubItem(null)} />;
+        case 'crm-imports':         return <CrmImportsView onBack={() => setOpenSubItem(null)} />;
         default: return null;
       }
     }
@@ -2214,6 +2311,278 @@ export function SettingsPage() {
         </div>
       </div>
     </>
+  );
+}
+
+// ─── CRM Settings ─────────────────────────────────────────────────────────────
+
+function CrmFunnelsView({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: funnels = [], isLoading } = useQuery<any[]>({ queryKey: ['crm-funnels'], queryFn: leadsApi.funnels });
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showNewFunnel, setShowNewFunnel] = useState(false);
+  const [newFunnelName, setNewFunnelName] = useState('');
+  const [newStageName, setNewStageName] = useState<Record<string, string>>({});
+
+  const createFunnelMut = useMutation({
+    mutationFn: (name: string) => leadsApi.createFunnel({ name, stages: [{ name: 'Novo', order: 0, color: '#6366F1', isInitial: true, isWon: false, isLost: false }] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm-funnels'] }); toast('Funil criado!', 'success'); setShowNewFunnel(false); setNewFunnelName(''); },
+    onError: () => toast('Erro ao criar funil.', 'error'),
+  });
+  const deleteFunnelMut = useMutation({
+    mutationFn: (id: string) => leadsApi.deleteFunnel(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm-funnels'] }); toast('Funil removido.', 'success'); },
+  });
+  const createStageMut = useMutation({
+    mutationFn: ({ funnelId, name, order }: any) => leadsApi.createStage(funnelId, { name, order, color: '#A1A1AA', isInitial: false, isWon: false, isLost: false }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm-funnels'] }); toast('Etapa adicionada!', 'success'); },
+  });
+  const deleteStageMut = useMutation({
+    mutationFn: (stageId: string) => leadsApi.deleteStage(stageId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm-funnels'] }); toast('Etapa removida.', 'success'); },
+  });
+
+  return (
+    <SubView title="Funis de vendas" desc="Configure os funis e etapas do seu CRM" icon="ti-layout-kanban" iconBg="#F5F3FF" iconColor="#7C3AED" parentLabel="CRM" onBack={onBack}
+      actions={<button onClick={() => setShowNewFunnel(true)} style={{ height: 34, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}><i className="ti ti-plus" style={{ fontSize: 13 }} /> Novo funil</button>}>
+      {showNewFunnel && (
+        <div style={{ marginBottom: 16, padding: '14px 16px', background: '#F9FAFB', borderRadius: 10, border: '1px solid #E4E4E7', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input value={newFunnelName} onChange={e => setNewFunnelName(e.target.value)} placeholder="Nome do funil" style={{ ...inpStyle, flex: 1 }} onKeyDown={e => { if (e.key === 'Enter' && newFunnelName.trim()) createFunnelMut.mutate(newFunnelName.trim()); }} />
+          <button onClick={() => createFunnelMut.mutate(newFunnelName.trim())} disabled={!newFunnelName.trim() || createFunnelMut.isPending} style={{ height: 36, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Criar</button>
+          <button onClick={() => setShowNewFunnel(false)} style={{ height: 36, padding: '0 10px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#71717A', cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+        </div>
+      )}
+      {isLoading ? <SectionLoader label="Carregando..." /> : funnels.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: '#A1A1AA' }}>Nenhum funil criado ainda.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {funnels.map((f: any) => (
+            <div key={f.id} style={{ background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 12 }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setExpanded(expanded === f.id ? null : f.id)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <i className="ti ti-layout-kanban" style={{ fontSize: 16, color: '#7C3AED' }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#09090B' }}>{f.name}</span>
+                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 99, background: '#F5F3FF', color: '#7C3AED', fontWeight: 600 }}>{f.stages?.length ?? 0} etapas</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <button onClick={e => { e.stopPropagation(); if (confirm(`Remover funil "${f.name}"?`)) deleteFunnelMut.mutate(f.id); }} style={{ height: 28, width: 28, border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ti ti-trash" style={{ fontSize: 13 }} />
+                  </button>
+                  <i className={`ti ti-chevron-${expanded === f.id ? 'up' : 'down'}`} style={{ fontSize: 13, color: '#A1A1AA' }} />
+                </div>
+              </div>
+              {expanded === f.id && (
+                <div style={{ borderTop: '1px solid #F4F4F5', padding: '10px 16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                    {(f.stages ?? []).map((s: any) => (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#F9F9F9', borderRadius: 8 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || '#A1A1AA', flexShrink: 0 }} />
+                        <span style={{ fontSize: 13, color: '#09090B', flex: 1 }}>{s.name}</span>
+                        {s.isInitial && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: '#EFF6FF', color: '#2563EB', fontWeight: 600 }}>Inicial</span>}
+                        {s.isWon && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: '#F0FDF4', color: '#16A34A', fontWeight: 600 }}>Ganho</span>}
+                        {s.isLost && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 99, background: '#FEF2F2', color: '#DC2626', fontWeight: 600 }}>Perdido</span>}
+                        <button onClick={() => deleteStageMut.mutate(s.id)} style={{ height: 24, width: 24, border: 'none', background: 'transparent', borderRadius: 4, cursor: 'pointer', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <i className="ti ti-x" style={{ fontSize: 12 }} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={newStageName[f.id] ?? ''} onChange={e => setNewStageName(p => ({ ...p, [f.id]: e.target.value }))} placeholder="Nome da nova etapa" style={{ ...inpStyle, flex: 1, height: 32, fontSize: 12 }} />
+                    <button
+                      onClick={() => { const n = newStageName[f.id]?.trim(); if (!n) return; createStageMut.mutate({ funnelId: f.id, name: n, order: (f.stages?.length ?? 0) }); setNewStageName(p => ({ ...p, [f.id]: '' })); }}
+                      disabled={!newStageName[f.id]?.trim()}
+                      style={{ height: 32, padding: '0 12px', background: '#000', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      + Etapa
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </SubView>
+  );
+}
+
+function CrmSourcesView({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: sources = [], isLoading } = useQuery<any[]>({ queryKey: ['lead-sources'], queryFn: leadsApi.sources });
+  const [name, setName] = useState('');
+  const createMut = useMutation({
+    mutationFn: (n: string) => leadsApi.createSource({ name: n }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['lead-sources'] }); toast('Origem criada!', 'success'); setName(''); },
+    onError: () => toast('Erro ao criar origem.', 'error'),
+  });
+  return (
+    <SubView title="Origens de lead" desc="Canais de captação utilizados no CRM" icon="ti-map-pin" iconBg="#EFF6FF" iconColor="#2563EB" parentLabel="CRM" onBack={onBack}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Instagram, Google, Indicação..." style={{ ...inpStyle, flex: 1 }} onKeyDown={e => { if (e.key === 'Enter' && name.trim()) createMut.mutate(name.trim()); }} />
+        <button onClick={() => { if (name.trim()) createMut.mutate(name.trim()); }} disabled={!name.trim() || createMut.isPending} style={{ height: 36, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Adicionar</button>
+      </div>
+      {isLoading ? <SectionLoader label="Carregando..." /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sources.length === 0 && <div style={{ textAlign: 'center', padding: '30px 0', color: '#A1A1AA', fontSize: 13 }}>Nenhuma origem cadastrada.</div>}
+          {sources.map((s: any) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 10 }}>
+              <i className="ti ti-map-pin" style={{ fontSize: 14, color: '#2563EB' }} />
+              <span style={{ fontSize: 13, color: '#09090B', flex: 1 }}>{s.name}</span>
+              <span style={{ fontSize: 11, color: '#A1A1AA' }}>{s.active ? 'Ativo' : 'Inativo'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </SubView>
+  );
+}
+
+function CrmLossReasonsView({ onBack }: { onBack: () => void }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: reasons = [], isLoading } = useQuery<any[]>({ queryKey: ['loss-reasons'], queryFn: leadsApi.lossReasons });
+  const [name, setName] = useState('');
+  const createMut = useMutation({
+    mutationFn: (n: string) => leadsApi.createLossReason({ name: n }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['loss-reasons'] }); toast('Motivo criado!', 'success'); setName(''); },
+    onError: () => toast('Erro ao criar motivo.', 'error'),
+  });
+  return (
+    <SubView title="Motivos de perda" desc="Motivos disponíveis ao marcar um lead como perdido" icon="ti-x-circle" iconBg="#FEF2F2" iconColor="#DC2626" parentLabel="CRM" onBack={onBack}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Preço, Concorrência, Sem interesse..." style={{ ...inpStyle, flex: 1 }} onKeyDown={e => { if (e.key === 'Enter' && name.trim()) createMut.mutate(name.trim()); }} />
+        <button onClick={() => { if (name.trim()) createMut.mutate(name.trim()); }} disabled={!name.trim() || createMut.isPending} style={{ height: 36, padding: '0 14px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>Adicionar</button>
+      </div>
+      {isLoading ? <SectionLoader label="Carregando..." /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {reasons.length === 0 && <div style={{ textAlign: 'center', padding: '30px 0', color: '#A1A1AA', fontSize: 13 }}>Nenhum motivo cadastrado. Os motivos cadastrados aparecerão ao marcar um lead como perdido.</div>}
+          {reasons.map((r: any) => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#FFFFFF', border: '1px solid #E4E4E7', borderRadius: 10 }}>
+              <i className="ti ti-x-circle" style={{ fontSize: 14, color: '#DC2626' }} />
+              <span style={{ fontSize: 13, color: '#09090B', flex: 1 }}>{r.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </SubView>
+  );
+}
+
+function CrmImportsView({ onBack }: { onBack: () => void }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
+  const qc = useQueryClient();
+  const { data: funnels = [] } = useQuery<any[]>({ queryKey: ['crm-funnels'], queryFn: leadsApi.funnels });
+  const [funnelId, setFunnelId] = useState('');
+  const selectedFunnel = funnels.find((f: any) => f.id === funnelId);
+  const [stageId, setStageId] = useState('');
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target?.result as string;
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const rows = lines.slice(1, 6).map(l => {
+        const vals = l.split(',').map(v => v.trim().replace(/"/g, ''));
+        return headers.reduce((o: any, h, i) => { o[h] = vals[i] || ''; return o; }, {});
+      });
+      setPreview(rows);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImport = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file || !funnelId || !stageId) { toast('Selecione o arquivo, funil e etapa.', 'error'); return; }
+    setImporting(true);
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const text = ev.target?.result as string;
+      const lines = text.trim().split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+      const nameIdx = headers.findIndex(h => h.includes('nome') || h === 'name');
+      const phoneIdx = headers.findIndex(h => h.includes('telefone') || h.includes('phone') || h.includes('whatsapp'));
+      const emailIdx = headers.findIndex(h => h.includes('email') || h.includes('e-mail'));
+      if (nameIdx === -1) { toast('Coluna "nome" não encontrada no CSV.', 'error'); setImporting(false); return; }
+      const leads = lines.slice(1).map(l => {
+        const vals = l.split(',').map(v => v.trim().replace(/"/g, ''));
+        return { name: vals[nameIdx], phone: phoneIdx >= 0 ? vals[phoneIdx] : undefined, email: emailIdx >= 0 ? vals[emailIdx] : undefined, funnelId, stageId };
+      }).filter(l => l.name);
+      try {
+        const result = await leadsApi.importLeads(leads);
+        qc.invalidateQueries({ queryKey: ['crm-leads'] });
+        toast(`Importação concluída: ${result.created} leads criados${result.errors?.length ? `, ${result.errors.length} erros` : ''}.`, 'success');
+        setPreview([]);
+        if (fileRef.current) fileRef.current.value = '';
+      } catch { toast('Erro na importação.', 'error'); }
+      setImporting(false);
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <SubView title="Importações" desc="Importe leads via arquivo CSV" icon="ti-file-import" iconBg="#EFF6FF" iconColor="#2563EB" parentLabel="CRM" onBack={onBack}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: '16px', background: '#F9FAFB', borderRadius: 12, border: '1px dashed #D4D4D8' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', marginBottom: 12 }}>1. Selecione o arquivo CSV</div>
+          <input ref={fileRef} type="file" accept=".csv" onChange={handleFile} style={{ fontSize: 13, color: '#09090B', fontFamily: 'inherit' }} />
+          <div style={{ marginTop: 8, fontSize: 11, color: '#A1A1AA' }}>Colunas esperadas: <code>nome</code>, <code>telefone</code>, <code>email</code> (as demais serão ignoradas)</div>
+        </div>
+
+        {preview.length > 0 && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', marginBottom: 8 }}>Pré-visualização (5 primeiras linhas)</div>
+            <div style={{ overflowX: 'auto', border: '1px solid #E4E4E7', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#F4F4F5' }}>
+                    {Object.keys(preview[0]).map(h => <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#71717A', borderBottom: '1px solid #E4E4E7' }}>{h}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, i) => (
+                    <tr key={i}>
+                      {Object.values(row).map((v: any, j) => <td key={j} style={{ padding: '8px 12px', color: '#09090B', borderBottom: '1px solid #F4F4F5' }}>{v}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#09090B', marginBottom: 10 }}>2. Destino no CRM</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={lblStyle}>Funil</label>
+              <select value={funnelId} onChange={e => { setFunnelId(e.target.value); setStageId(''); }} style={{ ...inpStyle, cursor: 'pointer' }}>
+                <option value="">Selecionar funil</option>
+                {funnels.map((f: any) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lblStyle}>Etapa inicial</label>
+              <select value={stageId} onChange={e => setStageId(e.target.value)} style={{ ...inpStyle, cursor: 'pointer' }} disabled={!selectedFunnel}>
+                <option value="">Selecionar etapa</option>
+                {(selectedFunnel as any)?.stages?.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button onClick={handleImport} disabled={importing || !funnelId || !stageId} style={{ height: 38, padding: '0 20px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', alignSelf: 'flex-start', opacity: importing || !funnelId || !stageId ? 0.5 : 1 }}>
+          {importing ? 'Importando...' : 'Iniciar importação'}
+        </button>
+      </div>
+    </SubView>
   );
 }
 
@@ -2703,54 +3072,167 @@ function WhatsAppConfigPanel({ onClose }: { onClose: () => void }) {
 
 // ─── Overview Section ─────────────────────────────────────────────────────────
 function OverviewSection({ goTo }: { goTo: (key: string) => void }) {
-  const configured    = MODULE_STATUS.filter(m => m.status === 'configurado').length;
-  const partial       = MODULE_STATUS.filter(m => m.status === 'parcial').length;
-  const pending       = MODULE_STATUS.filter(m => m.status === 'pendente').length;
-  const notConfigured = MODULE_STATUS.filter(m => m.status === 'nao_configurado').length;
-  const total         = MODULE_STATUS.length;
-  const pctOk         = Math.round((configured    / total) * 100);
-  const pctPartial    = Math.round((partial        / total) * 100);
-  const pctPending    = Math.round((pending        / total) * 100);
-  const pctNone       = Math.round((notConfigured  / total) * 100);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const { data, isLoading } = useQuery({ queryKey: ['settings-overview'], queryFn: settingsApi.getOverview, staleTime: 30_000 });
+
+  const modules: any[] = data?.modules || [];
+  const progress: number = data?.progress || 0;
+
+  const grouped = {
+    configurado:     modules.filter(m => m.status === 'configurado'),
+    parcial:         modules.filter(m => m.status === 'parcial'),
+    pendente:        modules.filter(m => m.status === 'pendente'),
+    nao_configurado: modules.filter(m => m.status === 'nao_configurado'),
+  };
+
+  const statusCards = [
+    { key: 'configurado',     color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0', label: 'Configurado',    icon: 'ti-circle-check' },
+    { key: 'parcial',         color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE', label: 'Parcial',         icon: 'ti-adjustments' },
+    { key: 'pendente',        color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', label: 'Pendente',        icon: 'ti-alert-triangle' },
+    { key: 'nao_configurado', color: '#71717A', bg: '#F4F4F5', border: '#E4E4E7', label: 'Não configurado', icon: 'ti-circle-dashed' },
+  ];
+
+  const filterMods = activeFilter ? grouped[activeFilter as keyof typeof grouped] : [];
+  const activeCard = statusCards.find(s => s.key === activeFilter);
+
+  const pctOk      = modules.length ? Math.round((grouped.configurado.length     / modules.length) * 100) : 0;
+  const pctPartial = modules.length ? Math.round((grouped.parcial.length         / modules.length) * 100) : 0;
+  const pctPending = modules.length ? Math.round((grouped.pendente.length        / modules.length) * 100) : 0;
+  const pctNone    = modules.length ? Math.round((grouped.nao_configurado.length / modules.length) * 100) : 0;
+
+  if (isLoading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, gap: 10, color: '#71717A', fontSize: 13 }}>
+      <i className="ti ti-loader-2" style={{ fontSize: 18, animation: 'spin 1s linear infinite' }} /> Calculando status...
+    </div>
+  );
+
   return (
     <div style={{ animation: 'fadeUp 0.2s ease' }}>
-      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '20px 24px', marginBottom: 20 }}>
+      {/* ── Resumo ────────────────────────────────────────────────────── */}
+      <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D', marginBottom: 14 }}>Resumo das configurações</div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}><span style={{ fontSize: 12, color: '#71717A' }}>{configured} de {total} módulos configurados</span><span style={{ fontSize: 13, fontWeight: 700, color: '#191C1D' }}>{pctOk}%</span></div>
-        <div style={{ display: 'flex', borderRadius: 99, overflow: 'hidden', height: 8, background: '#F4F4F5', gap: 1, marginBottom: 14 }}>
-          <div style={{ flex: pctOk, background: '#22C55E' }} /><div style={{ flex: pctPartial, background: '#60A5FA' }} /><div style={{ flex: pctPending, background: '#F59E0B' }} /><div style={{ flex: pctNone, background: '#E5E7EB' }} />
+
+        {/* Progress bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: '#71717A' }}>{grouped.configurado.length} de {modules.length} módulos configurados</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#191C1D' }}>{progress}%</span>
         </div>
+        <div style={{ display: 'flex', borderRadius: 99, overflow: 'hidden', height: 8, background: '#F4F4F5', gap: 1, marginBottom: 18 }}>
+          <div style={{ flex: pctOk,      background: '#22C55E', transition: 'flex 0.5s' }} />
+          <div style={{ flex: pctPartial, background: '#60A5FA', transition: 'flex 0.5s' }} />
+          <div style={{ flex: pctPending, background: '#F59E0B', transition: 'flex 0.5s' }} />
+          <div style={{ flex: pctNone,    background: '#E5E7EB', transition: 'flex 0.5s' }} />
+        </div>
+
+        {/* Status cards */}
         <div style={{ display: 'flex', gap: 10 }}>
-          {[{ color: '#16A34A', bg: '#F0FDF4', label: 'Configurado', count: configured, icon: 'ti-circle-check' }, { color: '#2563EB', bg: '#EFF6FF', label: 'Parcial', count: partial, icon: 'ti-adjustments' }, { color: '#D97706', bg: '#FFFBEB', label: 'Pendente', count: pending, icon: 'ti-alert-triangle' }, { color: '#71717A', bg: '#F4F4F5', label: 'Não configurado', count: notConfigured, icon: 'ti-circle-dashed' }].map(s => (
-            <div key={s.label} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: s.bg }}>
-              <i className={`ti ${s.icon}`} style={{ fontSize: 18, color: s.color, flexShrink: 0 }} />
-              <div><div style={{ fontSize: 18, fontWeight: 700, color: '#191C1D', lineHeight: 1 }}>{s.count}</div><div style={{ fontSize: 11, color: s.color, fontWeight: 600, marginTop: 1 }}>{s.label}</div></div>
-            </div>
-          ))}
+          {statusCards.map(s => {
+            const count = grouped[s.key as keyof typeof grouped].length;
+            const isActive = activeFilter === s.key;
+            return (
+              <button key={s.key} onClick={() => setActiveFilter(isActive ? null : s.key)}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, background: s.bg, border: `1.5px solid ${isActive ? s.color : s.border}`, cursor: 'pointer', textAlign: 'left', outline: 'none', transition: 'border-color 0.15s' }}>
+                <i className={`ti ${s.icon}`} style={{ fontSize: 18, color: s.color, flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#191C1D', lineHeight: 1 }}>{count}</div>
+                  <div style={{ fontSize: 11, color: s.color, fontWeight: 600, marginTop: 1 }}>{s.label}</div>
+                </div>
+                {count > 0 && <i className={`ti ${isActive ? 'ti-chevron-up' : 'ti-chevron-down'}`} style={{ fontSize: 12, color: s.color, marginLeft: 'auto' }} />}
+              </button>
+            );
+          })}
         </div>
+
+        {/* Expandable filter panel */}
+        {activeFilter && activeCard && filterMods.length > 0 && (
+          <div style={{ marginTop: 14, background: activeCard.bg, border: `1px solid ${activeCard.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${activeCard.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className={`ti ${activeCard.icon}`} style={{ fontSize: 13, color: activeCard.color }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: activeCard.color }}>{activeCard.label} — {filterMods.length} módulo{filterMods.length > 1 ? 's' : ''}</span>
+            </div>
+            {filterMods.map((mod: any) => (
+              <div key={mod.key} style={{ padding: '10px 14px', borderBottom: `1px solid ${activeCard.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 7, background: mod.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className={`ti ${mod.icon}`} style={{ fontSize: 14, color: mod.color }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#191C1D' }}>{mod.label}</div>
+                  {mod.missingItems.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                      {mod.missingItems.map((item: string) => (
+                        <span key={item} style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>{item}</span>
+                      ))}
+                    </div>
+                  )}
+                  {mod.configuredItems.length > 0 && mod.missingItems.length === 0 && (
+                    <div style={{ fontSize: 11, color: '#16A34A', marginTop: 2 }}>{mod.detail}</div>
+                  )}
+                </div>
+                <button onClick={() => { goTo(mod.route); setActiveFilter(null); }}
+                  style={{ height: 26, padding: '0 10px', background: '#fff', border: `1px solid ${activeCard.border}`, borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Configurar <i className="ti ti-arrow-right" style={{ fontSize: 10 }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* ── Tabela de módulos ─────────────────────────────────────────── */}
       <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#191C1D' }}>Status dos módulos</div>
-          <span style={{ fontSize: 11, color: '#71717A' }}>{total} módulos</span>
+          <span style={{ fontSize: 11, color: '#71717A' }}>{modules.length} módulos</span>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>{['Módulo', 'Status', 'Pendências', 'Atualização', 'Ação'].map((h, i) => <th key={h} style={{ padding: '9px 16px', textAlign: i === 4 ? 'center' : 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>)}</tr></thead>
+          <thead>
+            <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+              {['Módulo', 'Status', 'Pendências', 'Atualização', 'Ação'].map((h, i) => (
+                <th key={h} style={{ padding: '9px 16px', textAlign: i === 4 ? 'center' : 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {MODULE_STATUS.map(mod => {
-              const sc = STATUS_CFG[mod.status];
+            {modules.map((mod: any) => {
+              const sc = STATUS_CFG[mod.status as keyof typeof STATUS_CFG];
+              const pending = [...(mod.missingItems || []), ...(mod.pendingItems || [])];
               return (
-                <tr key={mod.key} style={{ borderBottom: '1px solid #F1F5F9' }} onMouseEnter={e => { Array.from(e.currentTarget.cells).forEach(c => (c.style.background = '#F9FAFB')); }} onMouseLeave={e => { Array.from(e.currentTarget.cells).forEach(c => (c.style.background = 'transparent')); }}>
+                <tr key={mod.key} style={{ borderBottom: '1px solid #F1F5F9' }}
+                  onMouseEnter={e => Array.from(e.currentTarget.cells).forEach(c => (c.style.background = '#F9FAFB'))}
+                  onMouseLeave={e => Array.from(e.currentTarget.cells).forEach(c => (c.style.background = 'transparent'))}>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: mod.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><i className={`ti ${mod.icon}`} style={{ fontSize: 15, color: mod.color }} /></div>
-                      <div><div style={{ fontSize: 13, fontWeight: 600, color: '#191C1D' }}>{mod.label}</div><div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>{mod.detail}</div></div>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: mod.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <i className={`ti ${mod.icon}`} style={{ fontSize: 15, color: mod.color }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#191C1D' }}>{mod.label}</div>
+                        <div style={{ fontSize: 11, color: '#71717A', marginTop: 1 }}>{mod.detail}</div>
+                      </div>
                     </div>
                   </td>
-                  <td style={{ padding: '12px 16px' }}><span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: sc.bg, color: sc.color, display: 'inline-flex', alignItems: 'center', gap: 5 }}><i className={`ti ${sc.icon}`} style={{ fontSize: 11 }} />{sc.label}</span></td>
-                  <td style={{ padding: '12px 16px' }}>{mod.pending.length > 0 ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{mod.pending.map(p => <span key={p} style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>{p}</span>)}</div> : <span style={{ fontSize: 12, color: '#9CA3AF' }}>—</span>}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#71717A', whiteSpace: 'nowrap' }}>{mod.lastUpdate}</td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}><button onClick={() => goTo(mod.key)} style={{ height: 28, padding: '0 12px', background: '#F4F4F5', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#374151', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }} onMouseEnter={e => (e.currentTarget.style.background = '#E4E4E7')} onMouseLeave={e => (e.currentTarget.style.background = '#F4F4F5')}>Configurar <i className="ti ti-arrow-right" style={{ fontSize: 10 }} /></button></td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99, background: sc.bg, color: sc.color, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <i className={`ti ${sc.icon}`} style={{ fontSize: 11 }} />{sc.label}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {pending.length > 0
+                      ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {pending.map(p => <span key={p} style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: '#FFFBEB', color: '#D97706', border: '1px solid #FDE68A' }}>{p}</span>)}
+                        </div>
+                      : <span style={{ fontSize: 12, color: '#9CA3AF' }}>—</span>
+                    }
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#71717A', whiteSpace: 'nowrap' }}>{mod.lastUpdated || '—'}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    <button onClick={() => goTo(mod.route)}
+                      style={{ height: 28, padding: '0 12px', background: '#F4F4F5', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 500, color: '#374151', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'inherit' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#E4E4E7')}
+                      onMouseLeave={e => (e.currentTarget.style.background = '#F4F4F5')}>
+                      Configurar <i className="ti ti-arrow-right" style={{ fontSize: 10 }} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}

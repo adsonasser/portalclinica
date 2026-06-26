@@ -15,4 +15,13 @@ export class DashboardController {
   getChartData(@ClinicId() clinicId: string, @Query('months') months?: string) {
     return this.dashboardService.getChartData(clinicId, Number(months) || 6);
   }
+
+  @Get('360')
+  getDashboard360(
+    @ClinicId() clinicId: string,
+    @Query('period') period?: string,
+    @Query('professionalId') professionalId?: string,
+  ) {
+    return this.dashboardService.getDashboard360(clinicId, period, professionalId);
+  }
 }

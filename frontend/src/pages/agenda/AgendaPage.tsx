@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { Portal } from '../../components/ui/Portal';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { patientsApi, agendaApi, appointmentTypesApi, plansApi, financialApi } from '../../services/api';
@@ -132,11 +133,13 @@ function getWeekDays(d:Date):Date[] {
 
 function ModalOverlay({ children, onClose, width = 520 }: { children:React.ReactNode; onClose:()=>void; width?:number }) {
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:'#FFFFFF', borderRadius:16, width, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 80px rgba(0,0,0,0.18)', padding:'28px 32px', fontFamily:"'Inter', system-ui, sans-serif" }}>
-        {children}
+    <Portal>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div onClick={e=>e.stopPropagation()} style={{ background:'#FFFFFF', borderRadius:16, width, maxWidth:'95vw', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 80px rgba(0,0,0,0.18)', padding:'28px 32px', fontFamily:"'Inter', system-ui, sans-serif" }}>
+          {children}
+        </div>
       </div>
-    </div>
+    </Portal>
   );
 }
 
@@ -389,9 +392,9 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
   const selPlan = activePlans.find(p => p.id === planId);
 
   return (
-    <>
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:9000, backdropFilter:'blur(2px)' }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:9001, boxShadow:'-4px 0 32px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideRight .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
+    <Portal>
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.25)', zIndex:1000, backdropFilter:'blur(2px)' }} />
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:640, background:'#FFFFFF', zIndex:1001, boxShadow:'-4px 0 32px rgba(0,0,0,.14)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", animation:'slideRight .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 28px', borderBottom:'1px solid #E4E4E7', flexShrink:0 }}>
@@ -764,7 +767,7 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 

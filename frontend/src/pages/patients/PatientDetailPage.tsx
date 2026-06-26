@@ -628,8 +628,8 @@ function PtAgendarPanel({sess,allSess,patientId,onClose,onSaved}:{sess:PtSess;al
   return(
     <Portal>
       <>
-        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.3)',zIndex:9000,backdropFilter:'blur(3px)'}}/>
-        <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(88vw,1100px)',background:'#FFFFFF',zIndex:9001,boxShadow:'-8px 0 40px rgba(0,0,0,.18)',display:'flex',flexDirection:'column',fontFamily:"'Inter',system-ui,sans-serif",overflow:'hidden'}}>
+        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.3)',zIndex:1000,backdropFilter:'blur(3px)'}}/>
+        <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(88vw,1100px)',background:'#FFFFFF',zIndex:1001,boxShadow:'-8px 0 40px rgba(0,0,0,.18)',display:'flex',flexDirection:'column',fontFamily:"'Inter',system-ui,sans-serif",overflow:'hidden'}}>
         <div style={{flexShrink:0,padding:'18px 28px',borderBottom:'1px solid #E4E4E7',display:'flex',alignItems:'center',justifyContent:'space-between',background:'#FFFFFF'}}>
           <div style={{display:'flex',alignItems:'center',gap:12}}>
             <div style={{width:38,height:38,borderRadius:10,background:'#EFF6FF',display:'flex',alignItems:'center',justifyContent:'center'}}><i className="ti ti-calendar-plus" style={{fontSize:18,color:'#2563EB'}}/></div>
@@ -723,8 +723,8 @@ function PtFinalizarModal({sessao,patientId,onClose,onSaved}:{sessao:PtPkgItem;p
   return(
     <Portal>
       <>
-        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:9800,backdropFilter:'blur(3px)'}}/>
-        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(90vw,520px)',background:'#FFFFFF',borderRadius:20,zIndex:9801,boxShadow:'0 20px 60px rgba(0,0,0,.22)',padding:'24px',fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1002,backdropFilter:'blur(3px)'}}/>
+        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(90vw,520px)',background:'#FFFFFF',borderRadius:20,zIndex:1003,boxShadow:'0 20px 60px rgba(0,0,0,.22)',padding:'24px',fontFamily:"'Inter',system-ui,sans-serif"}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
           <div><div style={{fontSize:16,fontWeight:700,color:'#09090B'}}>Finalizar sessão</div><div style={{fontSize:12,color:'#71717A',marginTop:2}}>{sessao.nome}</div></div>
           <button onClick={onClose} style={{width:30,height:30,border:'1px solid #E4E4E7',background:'#FFFFFF',borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><i className="ti ti-x" style={{fontSize:13,color:'#71717A'}}/></button>
@@ -756,8 +756,8 @@ function PtNotesModal({sessao,patientId,onClose}:{sessao:PtPkgItem;patientId:str
   return(
     <Portal>
       <>
-        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:9800,backdropFilter:'blur(3px)'}}/>
-        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(90vw,500px)',background:'#FFFFFF',borderRadius:20,zIndex:9801,boxShadow:'0 20px 60px rgba(0,0,0,.2)',padding:'24px',fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:1002,backdropFilter:'blur(3px)'}}/>
+        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(90vw,500px)',background:'#FFFFFF',borderRadius:20,zIndex:1003,boxShadow:'0 20px 60px rgba(0,0,0,.2)',padding:'24px',fontFamily:"'Inter',system-ui,sans-serif"}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}}>
           <div><div style={{fontSize:16,fontWeight:700,color:'#09090B'}}>Anotações da sessão</div><div style={{fontSize:12,color:'#71717A',marginTop:2}}>{sessao.nome}</div></div>
           <button onClick={onClose} style={{width:30,height:30,border:'1px solid #E4E4E7',background:'#FFFFFF',borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}><i className="ti ti-x" style={{fontSize:13,color:'#71717A'}}/></button>
@@ -801,8 +801,8 @@ function PtPkgDrawer({pkg,patientId,allSess,onClose}:{pkg:PtPkg;patientId:string
         {agendarSess&&<PtAgendarPanel sess={agendarSess} allSess={allSess} patientId={patientId} onClose={()=>setAgendarSess(null)} onSaved={()=>setAgendarSess(null)}/>}
         {finalizarItem&&<PtFinalizarModal sessao={finalizarItem} patientId={patientId} onClose={()=>setFinalizarItem(null)} onSaved={()=>setFinalizarItem(null)}/>}
         {notesItem&&<PtNotesModal sessao={notesItem} patientId={patientId} onClose={()=>setNotesItem(null)}/>}
-        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:300,backdropFilter:'blur(2px)'}}/>
-        <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(92vw,900px)',background:'#FFFFFF',zIndex:301,display:'flex',flexDirection:'column',fontFamily:"'Inter',system-ui,sans-serif",boxShadow:'-8px 0 40px rgba(0,0,0,.13)',animation:'slideIn .2s ease'}}>
+        <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.35)',zIndex:1000,backdropFilter:'blur(2px)'}}/>
+        <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(92vw,900px)',background:'#FFFFFF',zIndex:1001,display:'flex',flexDirection:'column',fontFamily:"'Inter',system-ui,sans-serif",boxShadow:'-8px 0 40px rgba(0,0,0,.13)',animation:'slideIn .2s ease'}}>
         <div style={{flexShrink:0,background:'#FFFFFF',borderBottom:'1px solid #F1F3F5',padding:'20px 24px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
           <div><div style={{fontSize:16,fontWeight:700,color:'#191C1D',marginBottom:3}}>Sessões do pacote</div><div style={{fontSize:12,color:'#71717A'}}>{pkg.procedimento}</div></div>
           <button onClick={onClose} style={{width:30,height:30,border:'1px solid #E4E4E7',background:'#FFFFFF',borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',color:'#71717A'}}><i className="ti ti-x" style={{fontSize:13}}/></button>
@@ -1922,8 +1922,8 @@ export function PatientDetailPage() {
       <Portal>
         <>
           <style>{`@keyframes slideInEdit { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
-          <div onClick={() => setEditOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 400, backdropFilter: 'blur(3px)' }} />
-          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 820, background: '#F8F9FA', zIndex: 401, display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 60px rgba(0,0,0,.16)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideInEdit .28s cubic-bezier(0.32,0.72,0,1)' }}>
+          <div onClick={() => setEditOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 1000, backdropFilter: 'blur(3px)' }} />
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 820, background: '#F8F9FA', zIndex: 1001, display: 'flex', flexDirection: 'column', boxShadow: '-12px 0 60px rgba(0,0,0,.16)', fontFamily: "'Inter', system-ui, sans-serif", animation: 'slideInEdit .28s cubic-bezier(0.32,0.72,0,1)' }}>
 
           {/* ── Header ── */}
           <div style={{ flexShrink: 0, background: '#FFFFFF', borderBottom: '1px solid #E5E7EB', padding: '18px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
