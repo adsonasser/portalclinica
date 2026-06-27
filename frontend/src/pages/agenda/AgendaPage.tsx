@@ -41,6 +41,7 @@ interface Appt {
   sh: number; sm: number; eh: number; em: number;
   room: string; phone: string; email: string; notes: string;
   dateOffset?: number;
+  isoDate?: string; // absolute YYYY-MM-DD for blocked slots (overrides dateOffset)
   saleId?: string; saleStatus?: string; saleTotal?: number; salePaidAmount?: number;
   isFromPackage?: boolean;
 }
@@ -90,10 +91,27 @@ function mapApiAppt(a: any, todayStart: Date): Appt {
 // Blocked slots stay local-only (patientId is required in DB)
 const BLOCKED_LS_KEY = 'pcl_blocked_slots';
 function loadBlocked(): Appt[] {
-  try { return JSON.parse(localStorage.getItem(BLOCKED_LS_KEY) ?? '[]'); } catch { return []; }
+  try {
+    const all: Appt[] = JSON.parse(localStorage.getItem(BLOCKED_LS_KEY) ?? '[]');
+    // purge legacy entries that lack isoDate — they drifted relative to today
+    const valid = all.filter(a => !!a.isoDate);
+    if (valid.length !== all.length) {
+      try { localStorage.setItem(BLOCKED_LS_KEY, JSON.stringify(valid)); } catch {}
+    }
+    return valid;
+  } catch { return []; }
 }
 function saveBlocked(a: Appt[]) {
   try { localStorage.setItem(BLOCKED_LS_KEY, JSON.stringify(a)); } catch {}
+}
+
+// Returns the absolute calendar date for any appointment type
+function getApptDate(a: Appt, todayStart: Date): Date {
+  if (a.isoDate) {
+    const [y, mo, d] = a.isoDate.split('-').map(Number);
+    return new Date(y, mo - 1, d);
+  }
+  return addDays(todayStart, a.dateOffset ?? 0);
 }
 
 const TIME_SLOTS: { h:number; m:number }[] = [];
@@ -795,7 +813,7 @@ function BloquearHorarioModal({ onClose, defaultDate, todayStart, onSave, profs 
     if (sh*60+sm >= eh*60+em) { setErr('Hora início deve ser antes da hora fim.'); return; }
     const sel = new Date(dateStr+'T00:00:00');
     const diff = Math.round((sel.getTime()-todayStart.getTime())/(86400000));
-    onSave({ id:`blk_${Date.now()}`, profId, patient:'Bloqueado', type:reason.trim()||'Horário bloqueado', status:'bloqueado', sh, sm, eh, em, room:'', phone:'', email:'', notes:'', dateOffset:diff });
+    onSave({ id:`blk_${Date.now()}`, profId, patient:'Bloqueado', type:reason.trim()||'Horário bloqueado', status:'bloqueado', sh, sm, eh, em, room:'', phone:'', email:'', notes:'', isoDate:dateStr, dateOffset:diff });
     onClose();
   }
 
@@ -968,7 +986,7 @@ export function AgendaPage() {
   const filterCount  = [statusFilter, typeFilter, roomFilter].filter(Boolean).length;
 
   function apptMatchesDate(a:Appt, d:Date):boolean {
-    return sameDay(addDays(todayStart, a.dateOffset ?? 0), d);
+    return sameDay(getApptDate(a, todayStart), d);
   }
 
   const filteredData = useMemo(() => appointments.filter(a => {
@@ -1344,7 +1362,7 @@ export function AgendaPage() {
     const st = STATUSES[a.status] || STATUSES.agendado;
     const pr = getProf(a.profId);
     const dur = (a.eh*60+a.em) - (a.sh*60+a.sm);
-    const apptD = addDays(todayStart, a.dateOffset ?? 0);
+    const apptD = getApptDate(a, todayStart);
     const ds = `${apptD.getDate()} de ${MONTHS_PT[apptD.getMonth()]}`;
 
     const [cancelOpen, setCancelOpen]     = useState(false);
@@ -1404,8 +1422,8 @@ export function AgendaPage() {
       return [...appointments]
         .filter(h => h.patientId === a.patientId && h.id !== a.id)
         .sort((x, y) => {
-          const xD = addDays(todayStart, x.dateOffset ?? 0);
-          const yD = addDays(todayStart, y.dateOffset ?? 0);
+          const xD = getApptDate(x, todayStart);
+          const yD = getApptDate(y, todayStart);
           const diff = yD.getTime() - xD.getTime();
           return diff !== 0 ? diff : (y.sh*60+y.sm) - (x.sh*60+x.sm);
         })
@@ -1749,7 +1767,7 @@ export function AgendaPage() {
               <div style={{ fontSize: 12, color: '#A1A1AA', fontStyle: 'italic' }}>Nenhum atendimento anterior no período.</div>
             ) : history.map((h, i) => {
               const hst = STATUSES[h.status] || STATUSES.agendado;
-              const hd = addDays(todayStart, h.dateOffset ?? 0);
+              const hd = getApptDate(h, todayStart);
               const hds = `${String(hd.getDate()).padStart(2,'0')}/${String(hd.getMonth()+1).padStart(2,'0')}`;
               return (
                 <div key={h.id} onClick={() => setSelectedId(h.id)}
