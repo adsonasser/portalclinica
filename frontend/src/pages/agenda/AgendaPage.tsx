@@ -1435,7 +1435,7 @@ export function AgendaPage() {
       try {
         const isBlocked = blockedSlots.some(b => b.id === a.id);
         if (isBlocked) {
-          setBlockedSlots(prev => { const n = prev.map(x => x.id===a.id ? {...x,status:'cancelado'} : x); saveBlocked(n); return n; });
+          setBlockedSlots(prev => { const n = prev.filter(x => x.id !== a.id); saveBlocked(n); return n; });
         } else {
           const extra = cancelReason.trim() ? `\nCancelamento: ${cancelReason.trim()}` : '';
           await agendaApi.update(a.id, {
@@ -1504,6 +1504,21 @@ export function AgendaPage() {
             {a.room && <><span style={{ fontSize: 11, color: '#D4D4D8' }}>·</span><span style={{ fontSize: 12, color: '#71717A' }}>{a.room}</span></>}
           </div>
         </div>
+
+        {/* Blocked slot actions */}
+        {a.status === 'bloqueado' && (
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Ações</div>
+            <button
+              onClick={() => {
+                setBlockedSlots(prev => { const n = prev.filter(x => x.id !== a.id); saveBlocked(n); return n; });
+                setSelectedId(null);
+              }}
+              style={{ height: 34, padding: '0 14px', background: '#FEF2F2', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#DC2626', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <i className="ti ti-lock-open" style={{ fontSize: 13 }} /> Remover bloqueio
+            </button>
+          </div>
+        )}
 
         {/* Quick actions */}
         {a.status !== 'bloqueado' && (
@@ -2122,19 +2137,22 @@ export function AgendaPage() {
             style={{ position:'fixed', top:Math.min(ctxMenu.y, window.innerHeight-(ctxMenu.apptId?420:180)), left:Math.min(ctxMenu.x, window.innerWidth-220), zIndex:9999, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:10, boxShadow:'0 8px 30px rgba(0,0,0,.12)', padding:'4px 0', minWidth:210, fontFamily:"'Inter', system-ui, sans-serif" }}>
             {ctxMenu.apptId ? (
               <>
-                {[
+                {(ctxMenu.apptId.startsWith('blk_') ? [
+                  { label:'Ver detalhes',    icon:'ti-eye',        action:()=>{ setSelectedId(ctxMenu!.apptId!); setCtxMenu(null); } },
+                  { label:'Remover bloqueio', icon:'ti-lock-open', action:()=>{ setBlockedSlots(prev=>{ const n=prev.filter(x=>x.id!==ctxMenu!.apptId!); saveBlocked(n); return n; }); if(selectedId===ctxMenu!.apptId!) setSelectedId(null); setCtxMenu(null); }, danger:true },
+                ] : [
                   { label:'Ver detalhes',       icon:'ti-eye',            action:()=>{ setSelectedId(ctxMenu!.apptId!); setCtxMenu(null); } },
                   { label:'Reagendar',          icon:'ti-calendar-event', action:()=>{ setSelectedId(ctxMenu!.apptId!); setCtxMenu(null); } },
                   { label:'Duplicar',           icon:'ti-copy',           action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a && !a.id.startsWith('blk_') && a.patientId) { const start=new Date(); start.setHours(a.sh,a.sm,0,0); const end=new Date(); end.setHours(a.eh,a.em,0,0); handleCreateAppt({patientId:a.patientId,professionalId:a.profId||null,startTime:start.toISOString(),endTime:end.toISOString(),status:'AGUARDANDO',notes:a.type}); } setCtxMenu(null); } },
                   { label:'Ver paciente',       icon:'ti-user',           action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.patientId) navigate(`/patients/${a.patientId}`); setCtxMenu(null); } },
                   { label:'Prontuário',         icon:'ti-notes-medical',  action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.patientId) navigate(`/prontuario/${a.patientId}`); setCtxMenu(null); } },
                   { label:'Enviar WhatsApp',    icon:'ti-brand-whatsapp', action:()=>{ const a=appointments.find(x=>x.id===ctxMenu.apptId); if(a?.phone) window.open(`https://wa.me/55${a.phone.replace(/\D/g,'')}`); setCtxMenu(null); } },
-                ].map((item,i)=>(
+                ] as { label:string; icon:string; action:()=>void; danger?:boolean }[]).map((item,i)=>(
                   <div key={i} onClick={item.action}
-                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background='#F4F4F5'}
+                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background=item.danger?'#FEF2F2':'#F4F4F5'}
                     onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background='transparent'}
-                    style={{ padding:'7px 14px', fontSize:13, color:'#191C1D', cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}>
-                    <i className={`ti ${item.icon}`} style={{ fontSize:13, color:'#71717A' }} />
+                    style={{ padding:'7px 14px', fontSize:13, color:item.danger?'#DC2626':'#191C1D', cursor:'pointer', display:'flex', alignItems:'center', gap:8 }}>
+                    <i className={`ti ${item.icon}`} style={{ fontSize:13, color:item.danger?'#DC2626':'#71717A' }} />
                     {item.label}
                   </div>
                 ))}
