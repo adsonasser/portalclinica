@@ -41,7 +41,8 @@ interface Appt {
   sh: number; sm: number; eh: number; em: number;
   room: string; phone: string; email: string; notes: string;
   dateOffset?: number;
-  isoDate?: string; // absolute YYYY-MM-DD for blocked slots (overrides dateOffset)
+  isoDate?: string;    // absolute YYYY-MM-DD start date for blocked slots (overrides dateOffset)
+  isoDateEnd?: string; // end date for multi-day blocked slots (inclusive)
   saleId?: string; saleStatus?: string; saleTotal?: number; salePaidAmount?: number;
   isFromPackage?: boolean;
 }
@@ -794,26 +795,45 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
 function BloquearHorarioModal({ onClose, defaultDate, todayStart, onSave, profs }: {
   onClose:()=>void; defaultDate:Date; todayStart:Date; onSave:(a:Appt)=>void; profs:Prof[];
 }) {
-  const [profId, setProfId]       = useState(() => profs[0]?.id || '');
-  const [dateStr, setDateStr]     = useState(() => {
+  const [profId, setProfId]         = useState(() => profs[0]?.id || '');
+  const [dateStr, setDateStr]       = useState(() => {
     const d = defaultDate;
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
-  const [startTime, setStartTime] = useState('08:00');
-  const [endTime, setEndTime]     = useState('09:00');
-  const [reason, setReason]       = useState('');
-  const [err, setErr]             = useState('');
+  const [endDateStr, setEndDateStr] = useState(() => {
+    const d = defaultDate;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  });
+  const [startTime, setStartTime]   = useState('08:00');
+  const [endTime, setEndTime]       = useState('09:00');
+  const [reason, setReason]         = useState('');
+  const [err, setErr]               = useState('');
+
+  const multiDay = endDateStr > dateStr;
 
   const inp: React.CSSProperties = { width:'100%', height:36, padding:'0 10px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, color:'#09090B', background:'#FFFFFF', boxSizing:'border-box', fontFamily:'inherit', outline:'none' };
   const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#71717A', display:'block', marginBottom:4 };
+
+  function handleDateChange(v: string) {
+    setDateStr(v);
+    if (v > endDateStr) setEndDateStr(v);
+  }
 
   function save() {
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
     if (sh*60+sm >= eh*60+em) { setErr('Hora início deve ser antes da hora fim.'); return; }
+    if (endDateStr < dateStr) { setErr('Data fim deve ser igual ou posterior à data início.'); return; }
     const sel = new Date(dateStr+'T00:00:00');
     const diff = Math.round((sel.getTime()-todayStart.getTime())/(86400000));
-    onSave({ id:`blk_${Date.now()}`, profId, patient:'Bloqueado', type:reason.trim()||'Horário bloqueado', status:'bloqueado', sh, sm, eh, em, room:'', phone:'', email:'', notes:'', isoDate:dateStr, dateOffset:diff });
+    onSave({
+      id: `blk_${Date.now()}`, profId, patient: 'Bloqueado',
+      type: reason.trim() || 'Horário bloqueado', status: 'bloqueado',
+      sh, sm, eh, em, room: '', phone: '', email: '', notes: '',
+      isoDate: dateStr,
+      isoDateEnd: multiDay ? endDateStr : undefined,
+      dateOffset: diff,
+    });
     onClose();
   }
 
@@ -831,12 +851,23 @@ function BloquearHorarioModal({ onClose, defaultDate, todayStart, onSave, profs 
             {profs.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        <div><label style={lbl}>Data</label><input type="date" value={dateStr} onChange={e=>setDateStr(e.target.value)} style={inp} /></div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+          <div><label style={lbl}>Data início</label><input type="date" value={dateStr} onChange={e=>handleDateChange(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>Data fim</label><input type="date" value={endDateStr} min={dateStr} onChange={e=>setEndDateStr(e.target.value)} style={inp} /></div>
+        </div>
+        {multiDay && (
+          <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', background:'#FFFBEB', borderRadius:8, border:'1px solid #FDE68A' }}>
+            <i className="ti ti-calendar-repeat" style={{ fontSize:13, color:'#D97706', flexShrink:0 }} />
+            <span style={{ fontSize:12, color:'#92400E' }}>
+              Bloqueio em múltiplos dias — será aplicado das {startTime} às {endTime} em cada dia do período.
+            </span>
+          </div>
+        )}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
           <div><label style={lbl}>Hora início</label><input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} style={inp} /></div>
           <div><label style={lbl}>Hora fim</label><input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} style={inp} /></div>
         </div>
-        <div><label style={lbl}>Motivo (opcional)</label><input value={reason} onChange={e=>setReason(e.target.value)} placeholder="Ex: Reunião, Feriado..." style={inp} /></div>
+        <div><label style={lbl}>Motivo (opcional)</label><input value={reason} onChange={e=>setReason(e.target.value)} placeholder="Ex: Férias, Feriado, Reunião..." style={inp} /></div>
         {err && <p style={{ fontSize:12, color:'#DC2626', margin:0 }}>{err}</p>}
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:4 }}>
           <button onClick={onClose} style={{ height:36, padding:'0 16px', border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
@@ -986,6 +1017,13 @@ export function AgendaPage() {
   const filterCount  = [statusFilter, typeFilter, roomFilter].filter(Boolean).length;
 
   function apptMatchesDate(a:Appt, d:Date):boolean {
+    if (a.isoDate && a.isoDateEnd) {
+      const [sy,sm,sd] = a.isoDate.split('-').map(Number);
+      const [ey,em,ed] = a.isoDateEnd.split('-').map(Number);
+      const start = new Date(sy, sm-1, sd);
+      const end   = new Date(ey, em-1, ed);
+      return d >= start && d <= end;
+    }
     return sameDay(getApptDate(a, todayStart), d);
   }
 
@@ -1363,7 +1401,13 @@ export function AgendaPage() {
     const pr = getProf(a.profId);
     const dur = (a.eh*60+a.em) - (a.sh*60+a.sm);
     const apptD = getApptDate(a, todayStart);
-    const ds = `${apptD.getDate()} de ${MONTHS_PT[apptD.getMonth()]}`;
+    const fmtDs = (d: Date) => `${d.getDate()} de ${MONTHS_PT[d.getMonth()]}`;
+    const ds = a.isoDateEnd && a.isoDateEnd > (a.isoDate ?? '')
+      ? (() => {
+          const [ey,em,ed] = a.isoDateEnd.split('-').map(Number);
+          return `${fmtDs(apptD)} → ${fmtDs(new Date(ey, em-1, ed))}`;
+        })()
+      : fmtDs(apptD);
 
     const [cancelOpen, setCancelOpen]     = useState(false);
     const [cancelReason, setCancelReason] = useState('');
