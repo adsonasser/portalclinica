@@ -767,7 +767,7 @@ export function AppLayout() {
             <div style={{ fontSize: 11, color: '#71717A', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(user as any)?.email}</div>
           </div>
           {([
-            { icon: 'ti-user', label: 'Meu perfil', path: '/settings' },
+            { icon: 'ti-user', label: 'Meu perfil', path: '/settings?section=profile' },
             { icon: 'ti-settings', label: 'Configurações', path: '/settings' },
           ] as const).map(item => (
             <button key={item.label}

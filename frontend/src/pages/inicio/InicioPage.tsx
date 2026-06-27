@@ -171,13 +171,16 @@ export function InicioPage() {
           const { latitude, longitude, name } = geo.results[0];
           await fetchByCoords(latitude, longitude, name);
         } else {
-          // Fallback: browser geolocation
+          // Fallback: browser geolocation with 8s timeout
+          const geoTimeout = setTimeout(() => {
+            if (!cancelled) setWeatherCity('—');
+          }, 8000);
           navigator.geolocation.getCurrentPosition(
             async (pos) => {
+              clearTimeout(geoTimeout);
               if (cancelled) return;
               try {
                 const { latitude, longitude } = pos.coords;
-                // Reverse geocode for a display name
                 const revRes = await fetch(
                   `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=pt`,
                   { headers: { 'Accept-Language': 'pt-BR' } }
@@ -189,7 +192,8 @@ export function InicioPage() {
                 await fetchByCoords(pos.coords.latitude, pos.coords.longitude, 'Localização atual');
               }
             },
-            () => {} // user denied — silent
+            () => { clearTimeout(geoTimeout); if (!cancelled) setWeatherCity('—'); },
+            { timeout: 8000 }
           );
         }
       } catch { /* silent */ }
@@ -385,7 +389,7 @@ export function InicioPage() {
             </div>
             {!weather ? (
               <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.7)', flex: 1, display: 'flex', alignItems: 'center', position: 'relative' }}>
-                {data === undefined ? 'Carregando...' : 'Obtendo localização...'}
+                {data === undefined ? 'Carregando...' : weatherCity === '—' ? 'Clima indisponível' : 'Obtendo localização...'}
               </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'relative' }}>

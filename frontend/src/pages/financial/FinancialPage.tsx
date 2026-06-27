@@ -2266,7 +2266,7 @@ function VendasTab({ sales }: { sales: Sale[] }) {
     }
   }, [searchParams, sales]);
   const [cancelSale,    setCancelSale]    = useState<Sale | null>(null);
-  const [period,        setPeriod]        = useState<PeriodKey>('this_month');
+  const [period,        setPeriod]        = useState<PeriodKey>('last_30');
   const [customStart,   setCustomStart]   = useState('');
   const [customEnd,     setCustomEnd]     = useState('');
 
@@ -2432,7 +2432,11 @@ function VendasTab({ sales }: { sales: Sale[] }) {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={9} style={{ padding:'48px 16px', textAlign:'center', color:'#A1A1AA', fontSize:13 }}>Nenhum resultado encontrado</td></tr>
+              <tr><td colSpan={9} style={{ padding:'56px 16px', textAlign:'center' }}>
+                <i className="ti ti-calendar-search" style={{ fontSize:36, color:'#D4D4D8', display:'block', marginBottom:10 }} />
+                <div style={{ fontSize:14, fontWeight:600, color:'#09090B', marginBottom:4 }}>Nenhuma venda no período selecionado</div>
+                <div style={{ fontSize:12, color:'#71717A' }}>Altere o filtro de período acima para visualizar vendas de outros períodos.</div>
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -2660,7 +2664,7 @@ function ContasTab() {
   const [bulkDivOpen,      setBulkDivOpen]      = useState(false);
   const [filterOpen,       setFilterOpen]       = useState(false);
   const filterWrapRef                           = useRef<HTMLDivElement>(null);
-  const [period,           setPeriod]           = useState<PeriodKey>('this_month');
+  const [period,           setPeriod]           = useState<PeriodKey>('last_30');
   const [customStart,      setCustomStart]      = useState('');
   const [customEnd,        setCustomEnd]        = useState('');
 
@@ -3135,16 +3139,17 @@ function ContasTab() {
 
 // ─── Tab: Relatórios ──────────────────────────────────────────────────────────
 const RELATORIOS = [
-  { icon:'ti-calendar-stats',    title:'Vendas por período',      desc:'Total vendido, orçamentos e taxa de conversão',    soon:false },
-  { icon:'ti-cash',              title:'Recebimentos por período', desc:'Entradas, formas de pagamento e saldos recebidos', soon:false },
-  { icon:'ti-circle-arrow-up',   title:'Contas a pagar',          desc:'Despesas, vencimentos e fluxo de saída',           soon:false },
-  { icon:'ti-circle-arrow-down', title:'Contas a receber',        desc:'Parcelas, cobranças e inadimplência',              soon:false },
-  { icon:'ti-alert-triangle',    title:'Inadimplência',           desc:'Clientes em atraso e análise de risco',            soon:true },
-  { icon:'ti-stethoscope',       title:'Vendas por serviço',      desc:'Serviços mais vendidos e receita por item',        soon:true },
-  { icon:'ti-user-heart',        title:'Vendas por profissional', desc:'Produtividade e receita por profissional',         soon:true },
+  { icon:'ti-calendar-stats',    title:'Vendas por período',      desc:'Total vendido, orçamentos e taxa de conversão',    soon:false, tab:'vendas',  iconBg:'#F0FDF4', iconColor:'#16A34A' },
+  { icon:'ti-cash',              title:'Recebimentos por período', desc:'Entradas, formas de pagamento e saldos recebidos', soon:false, tab:'contas',  iconBg:'#EFF6FF', iconColor:'#2563EB' },
+  { icon:'ti-circle-arrow-up',   title:'Contas a pagar',          desc:'Despesas, vencimentos e fluxo de saída',           soon:false, tab:'contas',  iconBg:'#FEF2F2', iconColor:'#DC2626' },
+  { icon:'ti-circle-arrow-down', title:'Contas a receber',        desc:'Parcelas, cobranças e inadimplência',              soon:false, tab:'contas',  iconBg:'#FFFBEB', iconColor:'#D97706' },
+  { icon:'ti-alert-triangle',    title:'Inadimplência',           desc:'Clientes em atraso e análise de risco',            soon:true,  tab:'',        iconBg:'#F4F4F5', iconColor:'#A1A1AA' },
+  { icon:'ti-stethoscope',       title:'Vendas por serviço',      desc:'Serviços mais vendidos e receita por item',        soon:true,  tab:'',        iconBg:'#F4F4F5', iconColor:'#A1A1AA' },
+  { icon:'ti-user-heart',        title:'Vendas por profissional', desc:'Produtividade e receita por profissional',         soon:true,  tab:'',        iconBg:'#F4F4F5', iconColor:'#A1A1AA' },
 ];
 
 function RelatoriosTab() {
+  const navigate = useNavigate();
   return (
     <div style={{ padding:'24px 40px' }}>
       <div style={{ marginBottom:24 }}>
@@ -3154,17 +3159,22 @@ function RelatoriosTab() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16 }}>
         {RELATORIOS.map((r, i) => (
           <div key={i}
+            onClick={() => { if(!r.soon) navigate(`/financial?tab=${r.tab}`); }}
             style={{ background:'#FFFFFF', borderRadius:12, border:'1px solid #E4E4E7', padding:'24px', cursor:r.soon?'default':'pointer', opacity:r.soon?.6:1, transition:'all .15s' }}
             onMouseEnter={e => { if(!r.soon) { (e.currentTarget as HTMLElement).style.boxShadow='0 4px 16px rgba(0,0,0,.08)'; (e.currentTarget as HTMLElement).style.borderColor='#D4D4D8'; } }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow='none'; (e.currentTarget as HTMLElement).style.borderColor='#E4E4E7'; }}>
-            <div style={{ width:44, height:44, borderRadius:12, background:'#F4F4F5', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
-              <i className={`ti ${r.icon}`} style={{ fontSize:20, color:'#71717A' }} />
+            <div style={{ width:44, height:44, borderRadius:12, background:r.iconBg, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14 }}>
+              <i className={`ti ${r.icon}`} style={{ fontSize:20, color:r.iconColor }} />
             </div>
             <div style={{ fontSize:14, fontWeight:600, color:'#09090B', marginBottom:4 }}>{r.title}</div>
             <div style={{ fontSize:12, color:'#71717A', lineHeight:1.6 }}>{r.desc}</div>
-            {r.soon && (
+            {r.soon ? (
               <div style={{ marginTop:12, fontSize:11, fontWeight:600, color:'#A1A1AA', display:'flex', alignItems:'center', gap:5 }}>
                 <i className="ti ti-clock" style={{ fontSize:12 }} /> Em breve
+              </div>
+            ) : (
+              <div style={{ marginTop:12, fontSize:11, fontWeight:600, color:r.iconColor, display:'flex', alignItems:'center', gap:5 }}>
+                <i className="ti ti-arrow-right" style={{ fontSize:12 }} /> Ver relatório
               </div>
             )}
           </div>

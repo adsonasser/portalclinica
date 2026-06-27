@@ -1510,7 +1510,7 @@ export function PatientDetailPage() {
         {/* 4 KPI cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {[
-            { icon: 'ti-calendar',   label: 'Agendamentos', value: appointmentCount, sub: appointmentCount > 0 ? `${appointmentCount} no total` : 'Nenhum agendamento futuro',  iconBg: '#EFF6FF', iconColor: '#2563EB' },
+            { icon: 'ti-calendar',   label: 'Próximos agend.', value: futureAppts.length, sub: futureAppts.length > 0 ? `próximos agendamentos` : 'Nenhum agendamento futuro',  iconBg: '#EFF6FF', iconColor: '#2563EB' },
             { icon: 'ti-activity',   label: 'Sessões',      value: sessionCount,     sub: sessionCount     > 0 ? `${sessionCount} realizadas`  : 'Nenhuma sessão realizada',    iconBg: '#F0FDF4', iconColor: '#16A34A' },
             { icon: 'ti-cash',       label: 'Vendas',       value: saleCount,        sub: saleCount        > 0 ? `${saleCount} realizadas`      : 'Nenhuma venda realizada',     iconBg: '#F5F3FF', iconColor: '#7C3AED' },
             { icon: 'ti-alert-circle',label:'Pendências',   value: alerts.length,    sub: alerts.length    > 0 ? `${alerts.length} itens`       : 'Nada pendente no momento',    iconBg: alerts.length > 0 ? '#FEF2F2' : '#F4F4F5', iconColor: alerts.length > 0 ? '#DC2626' : '#A1A1AA' },

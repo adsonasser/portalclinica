@@ -31,6 +31,8 @@ export function PatientsPage() {
   const { canView } = usePermissions();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -151,6 +153,9 @@ export function PatientsPage() {
     }
   };
 
+  const totalPages = Math.max(1, Math.ceil(patients.length / PAGE_SIZE));
+  const pagedPatients = patients.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const kpiCards = [
     { label: 'Total', value: stats?.total || 0, sub: 'cadastrados', icon: 'ti-users', iconBg: '#EFF6FF', iconColor: '#2563EB' },
     { label: 'Em tratamento', value: stats?.ativos || 0, sub: 'sessões ativas', icon: 'ti-activity', iconBg: '#F0FDF4', iconColor: '#16A34A' },
@@ -250,7 +255,7 @@ export function PatientsPage() {
                   <div style={{ fontSize: 14, fontWeight: 500, color: '#71717A' }}>Nenhum contato encontrado</div>
                   <div style={{ fontSize: 12, color: '#A1A1AA', marginTop: 4 }}>Adicione o primeiro contato clicando no botão acima</div>
                 </td></tr>
-              ) : patients.map((p: any) => {
+              ) : pagedPatients.map((p: any) => {
                 const badge = STATUS_BADGE[p.status] || STATUS_BADGE.NOVO;
                 const initials = p.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase();
                 const { score } = calcPatientScore(p);
@@ -282,7 +287,7 @@ export function PatientsPage() {
                                 {ct.contactType?.name ?? '—'}
                               </span>
                             ))
-                          : <span style={{ fontSize: 11, color: '#A1A1AA' }}>—</span>
+                          : <span style={{ fontSize: 11, color: '#A1A1AA' }}>Não definido</span>
                         }
                       </div>
                     </td>
@@ -342,21 +347,27 @@ export function PatientsPage() {
           {patients.length > 0 && (
             <div style={{ padding: '14px 20px', borderTop: '1px solid #F1F3F5', background: 'rgba(248,249,250,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontSize: 13, color: '#747686' }}>
-                Mostrando <b style={{ color: '#191C1D' }}>{patients.length}</b> de <b style={{ color: '#191C1D' }}>{stats?.total || patients.length}</b> contatos
+                Mostrando <b style={{ color: '#191C1D' }}>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, patients.length)}</b> de <b style={{ color: '#191C1D' }}>{patients.length}</b> contatos
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                {[null, 1, 2, 3, null].map((page, i) =>
-                  page === null ? (
-                    i === 0
-                      ? <button key="prev" style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E4E4E7', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#A1A1AA' }}><i className="ti ti-chevron-left" style={{ fontSize: 13 }} /></button>
-                      : <button key="next" style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E4E4E7', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#A1A1AA' }}><i className="ti ti-chevron-right" style={{ fontSize: 13 }} /></button>
-                  ) : (
-                    <button key={page} style={{ width: 30, height: 30, borderRadius: '50%', border: page === 1 ? 'none' : '1px solid #E4E4E7', background: page === 1 ? '#000' : 'transparent', color: page === 1 ? '#fff' : '#747686', fontSize: 12, fontWeight: page === 1 ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {page}
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    disabled={page === 1}
+                    onClick={() => setPage(p => p - 1)}
+                    style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E4E4E7', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: page === 1 ? 'default' : 'pointer', color: page === 1 ? '#D4D4D8' : '#A1A1AA' }}
+                  ><i className="ti ti-chevron-left" style={{ fontSize: 13 }} /></button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setPage(p)} style={{ width: 30, height: 30, borderRadius: '50%', border: p === page ? 'none' : '1px solid #E4E4E7', background: p === page ? '#000' : 'transparent', color: p === page ? '#fff' : '#747686', fontSize: 12, fontWeight: p === page ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {p}
                     </button>
-                  )
-                )}
-              </div>
+                  ))}
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                    style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #E4E4E7', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: page === totalPages ? 'default' : 'pointer', color: page === totalPages ? '#D4D4D8' : '#A1A1AA' }}
+                  ><i className="ti ti-chevron-right" style={{ fontSize: 13 }} /></button>
+                </div>
+              )}
             </div>
           )}
         </div>

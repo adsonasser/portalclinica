@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type CSSProperties } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { prontuarioApi, financialApi, usersApi, accessProfilesApi, appointmentTypesApi, contractTemplatesApi, whatsAppApi, contactTypesApi, settingsApi, leadsApi } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { ProceduresPage } from './ProceduresPage';
 import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
@@ -10,6 +11,7 @@ import { SectionLoader, TableLoader } from '../../components/ui/Loader';
 // ─── Nav Items ────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { key: 'overview',        label: 'Visão geral',              icon: 'ti-layout-grid' },
+  { key: 'profile',         label: 'Meu perfil',               icon: 'ti-user-circle' },
   { key: 'clinic',          label: 'Clínica',                  icon: 'ti-building' },
   { key: 'users',           label: 'Usuários e permissões',    icon: 'ti-users' },
   { key: 'agenda',          label: 'Agenda',                   icon: 'ti-calendar' },
@@ -497,7 +499,7 @@ function ClinicInfoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     },
     onError: () => toast('Erro ao salvar dados', 'error'),
   });
-  if (isLoading) return <div style={{ padding: 40, color: '#71717A', fontSize: 13 }}>Carregando...</div>;
+  if (isLoading) return <SectionLoader />;
   return (
     <SubView title="Informações cadastrais" desc="Dados cadastrais da clínica — cidade e estado são usados na previsão do tempo e relatórios." icon="ti-info-circle" iconBg={mc.bg} iconColor={mc.color} parentLabel="Clínica" onBack={onBack}
       actions={<button onClick={() => saveMut.mutate(info)} disabled={saveMut.isPending} style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, opacity: saveMut.isPending ? 0.6 : 1 }}>{saveMut.isPending ? 'Salvando...' : <><i className="ti ti-device-floppy" style={{ fontSize: 14 }} /> Salvar alterações</>}</button>}>
@@ -2182,6 +2184,115 @@ function ContractTemplatesView({ onBack, mc }: { onBack: () => void; mc: ModInfo
   );
 }
 
+// ─── Meu Perfil ───────────────────────────────────────────────────────────────
+function MyProfileView() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [name, setName] = useState(user?.name || '');
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwErr, setPwErr] = useState('');
+
+  const initials = (user?.name || 'U').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+
+  const nameMut = useMutation({
+    mutationFn: () => usersApi.update(user!.id, { name }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast('Nome atualizado com sucesso!', 'success'); },
+    onError: () => toast('Erro ao atualizar nome', 'error'),
+  });
+
+  const pwMut = useMutation({
+    mutationFn: () => usersApi.update(user!.id, { password: newPw }),
+    onSuccess: () => { toast('Senha atualizada com sucesso!', 'success'); setCurrentPw(''); setNewPw(''); setConfirmPw(''); },
+    onError: () => toast('Erro ao atualizar senha', 'error'),
+  });
+
+  const handleSavePw = () => {
+    setPwErr('');
+    if (!currentPw) { setPwErr('Informe a senha atual.'); return; }
+    if (newPw.length < 6) { setPwErr('A nova senha precisa ter ao menos 6 caracteres.'); return; }
+    if (newPw !== confirmPw) { setPwErr('A confirmação não confere.'); return; }
+    pwMut.mutate();
+  };
+
+  const inp: CSSProperties = { width: '100%', height: 38, padding: '0 12px', border: '1px solid #E4E4E7', borderRadius: 8, fontSize: 13, color: '#191C1D', background: '#FFFFFF', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' };
+  const lbl: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: '#71717A', marginBottom: 6 };
+
+  return (
+    <div style={{ padding: '0 0 40px', animation: 'fadeUp 0.2s ease', maxWidth: 560 }}>
+      {/* Avatar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32, padding: '24px 28px', background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7' }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#18181B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700, color: '#FFFFFF', flexShrink: 0 }}>
+          {user?.avatarUrl
+            ? <img src={user.avatarUrl} alt={user.name} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover' }} />
+            : initials}
+        </div>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#09090B' }}>{user?.name}</div>
+          <div style={{ fontSize: 13, color: '#71717A', marginTop: 2 }}>{user?.email}</div>
+          <span style={{ marginTop: 6, display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 99, background: '#F4F4F5', color: '#71717A' }}>{user?.role === 'admin' ? 'Administrador' : 'Usuário'}</span>
+        </div>
+      </div>
+
+      {/* Dados pessoais */}
+      <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7', padding: '24px 28px', marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#09090B', marginBottom: 20 }}>Informações pessoais</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={lbl}>Nome completo</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Seu nome" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>E-mail</label>
+            <input value={user?.email || ''} readOnly style={{ ...inp, background: '#F4F4F5', color: '#71717A', cursor: 'default' }} />
+            <div style={{ fontSize: 11, color: '#A1A1AA', marginTop: 4 }}>O e-mail não pode ser alterado aqui.</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => nameMut.mutate()}
+            disabled={nameMut.isPending || !name.trim() || name === user?.name}
+            style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: nameMut.isPending ? 'wait' : 'pointer', opacity: (!name.trim() || name === user?.name) ? 0.4 : 1, fontFamily: 'inherit' }}
+          >
+            {nameMut.isPending ? 'Salvando...' : 'Salvar nome'}
+          </button>
+        </div>
+      </div>
+
+      {/* Alterar senha */}
+      <div style={{ background: '#FFFFFF', borderRadius: 12, border: '1px solid #E4E4E7', padding: '24px 28px' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#09090B', marginBottom: 20 }}>Alterar senha</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <label style={lbl}>Senha atual</label>
+            <input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="••••••••" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Nova senha</label>
+            <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Mínimo 6 caracteres" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Confirmar nova senha</label>
+            <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Repita a nova senha" style={inp} />
+          </div>
+          {pwErr && <div style={{ fontSize: 12, color: '#DC2626', display: 'flex', alignItems: 'center', gap: 5 }}><i className="ti ti-alert-circle" style={{ fontSize: 13 }} />{pwErr}</div>}
+        </div>
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={handleSavePw}
+            disabled={pwMut.isPending}
+            style={{ height: 36, padding: '0 16px', background: '#000', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: pwMut.isPending ? 'wait' : 'pointer', fontFamily: 'inherit' }}
+          >
+            {pwMut.isPending ? 'Salvando...' : 'Alterar senha'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main SettingsPage ────────────────────────────────────────────────────────
 export function SettingsPage() {
   const [searchParams] = useSearchParams();
@@ -2195,6 +2306,7 @@ export function SettingsPage() {
 
   const renderContent = () => {
     if (activeNav === 'overview') return <OverviewSection goTo={goTo} />;
+    if (activeNav === 'profile') return <MyProfileView />;
     if (activeNav === 'procedures') return <ProceduresPage />;
     if (activeNav === 'integrations') return <IntegrationsView />;
     if (activeNav === 'sessions') return (
