@@ -210,6 +210,7 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
   // ── Appointment state ──
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState('');
+  const [patientRequired, setPatientRequired] = useState(false);
   const [profId, setProfId]     = useState(initialValues?.profId || modalProfs[0]?.id || '');
   const [dateStr, setDateStr]   = useState(() => {
     const d = initDate;
@@ -348,7 +349,8 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
 
   async function saveAppt() {
     setErr('');
-    if (!selPat) { setErr(mode==='existing' ? 'Selecione um paciente ou cadastre um novo.' : 'Salve o paciente antes de criar o agendamento.'); return; }
+    setPatientRequired(false);
+    if (!selPat) { setPatientRequired(true); setErr(mode==='existing' ? 'Selecione um paciente ou cadastre um novo.' : 'Salve o paciente antes de criar o agendamento.'); return; }
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
     if (sh*60+sm >= eh*60+em) { setErr('Hora de início deve ser antes da hora de fim.'); return; }
@@ -459,9 +461,9 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
                 {mode === 'existing' && (
                   <div>
                     <div style={{ position:'relative' }}>
-                      <div style={{ display:'flex', alignItems:'center', gap:8, background:'#FFFFFF', border:'1px solid #E4E4E7', borderRadius:8, padding:'0 12px', height:36 }}>
-                        <i className="ti ti-search" style={{ fontSize:14, color:'#A1A1AA', flexShrink:0 }} />
-                        <input value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+                      <div style={{ display:'flex', alignItems:'center', gap:8, background:'#FFFFFF', border:patientRequired?'1.5px solid #DC2626':'1px solid #E4E4E7', borderRadius:8, padding:'0 12px', height:36, transition:'border-color .15s' }}>
+                        <i className="ti ti-search" style={{ fontSize:14, color:patientRequired?'#DC2626':'#A1A1AA', flexShrink:0 }} />
+                        <input value={searchQ} onChange={e=>{ setSearchQ(e.target.value); if(patientRequired) setPatientRequired(false); }}
                           onFocus={()=>{ if (searchRes.length > 0) setShowDrop(true); }}
                           placeholder="Buscar por nome, CPF ou telefone..."
                           style={{ border:'none', background:'transparent', fontSize:13, outline:'none', width:'100%', color:'#09090B', fontFamily:'inherit' }} />
@@ -759,8 +761,8 @@ function NovoAgendamentoModal({ onClose, defaultDate, onSave, modalProfs, initia
         {/* Footer */}
         <div style={{ flexShrink:0, padding:'14px 28px', borderTop:'1px solid #E4E4E7', display:'flex', gap:10, background:'#FAFAFA' }}>
           <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid #E4E4E7', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', background:'#FFFFFF', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
-          <button onClick={saveAppt} disabled={saving || !selPat}
-            style={{ flex:2, height:40, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background:(selPat && !saving)?'#000000':'#A1A1AA', cursor:(selPat && !saving)?'pointer':'not-allowed', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+          <button onClick={saveAppt} disabled={saving}
+            style={{ flex:2, height:40, border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', background:saving?'#A1A1AA':'#000000', cursor:saving?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
             {saving
               ? <><i className="ti ti-loader-2" style={{ fontSize:14, animation:'spin 1s linear infinite' }} /> Salvando...</>
               : <><i className="ti ti-calendar-plus" style={{ fontSize:14 }} /> Salvar agendamento</>}
