@@ -112,6 +112,26 @@ const MOTIVATIONAL = [
   { quote: 'Produtividade\ncom propósito.', sub: 'Vamos nessa! 🚀' },
 ];
 
+// ─── Weather cache (30-min TTL) ───────────────────────────────────────────────
+const WEATHER_CACHE_KEY = 'pcl_weather_v1';
+const WEATHER_TTL_MS    = 30 * 60 * 1000;
+
+interface WeatherCache {
+  temp: number; code: number; max?: number; min?: number; rain?: number;
+  city: string; cachedAt: number;
+}
+function loadWeatherCache(): WeatherCache | null {
+  try {
+    const raw = localStorage.getItem(WEATHER_CACHE_KEY);
+    if (!raw) return null;
+    const c: WeatherCache = JSON.parse(raw);
+    return (Date.now() - c.cachedAt) < WEATHER_TTL_MS ? c : null;
+  } catch { return null; }
+}
+function saveWeatherCache(w: Omit<WeatherCache, 'cachedAt'>) {
+  try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify({ ...w, cachedAt: Date.now() })); } catch {}
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function InicioPage() {
@@ -125,8 +145,11 @@ export function InicioPage() {
   const dateStr      = formatDate(now);
   const motivational = MOTIVATIONAL[now.getDay() % MOTIVATIONAL.length];
 
-  const [weather, setWeather] = useState<{ temp: number; code: number; max?: number; min?: number; rain?: number } | null>(null);
-  const [weatherCity, setWeatherCity] = useState<string | null>(null);
+  const _wc = loadWeatherCache();
+  const [weather, setWeather] = useState<{ temp: number; code: number; max?: number; min?: number; rain?: number } | null>(
+    _wc ? { temp: _wc.temp, code: _wc.code, max: _wc.max, min: _wc.min, rain: _wc.rain } : null
+  );
+  const [weatherCity, setWeatherCity] = useState<string | null>(_wc?.city ?? null);
   const [newNote, setNewNote] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
 
@@ -138,7 +161,9 @@ export function InicioPage() {
 
   // Fetch weather — uses clinic city if configured, falls back to browser geolocation
   useEffect(() => {
-    if (data === undefined) return; // wait for API response
+    if (data === undefined) return; // wait for API to know clinic city
+    // If cache is still fresh, skip network fetch entirely
+    if (loadWeatherCache()) return;
     const city = data?.clinic?.city;
     let cancelled = false;
 
@@ -151,14 +176,19 @@ export function InicioPage() {
       );
       const wx = await wxRes.json();
       if (cancelled || !wx?.current) return;
-      setWeather({
+      const w = {
         temp: Math.round(wx.current.temperature_2m),
         code: wx.current.weather_code,
         max:  wx.daily?.temperature_2m_max?.[0]  != null ? Math.round(wx.daily.temperature_2m_max[0])  : undefined,
         min:  wx.daily?.temperature_2m_min?.[0]  != null ? Math.round(wx.daily.temperature_2m_min[0])  : undefined,
         rain: wx.daily?.precipitation_sum?.[0]   != null ? Math.round(wx.daily.precipitation_sum[0])   : undefined,
-      });
-      if (displayName && !cancelled) setWeatherCity(displayName);
+      };
+      setWeather(w);
+      const name = displayName || 'Local';
+      if (!cancelled) {
+        setWeatherCity(name);
+        saveWeatherCache({ ...w, city: name });
+      }
     }
 
     (async () => {
@@ -229,14 +259,6 @@ export function InicioPage() {
     boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   };
 
-  if (isLoading) return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden',
-      fontFamily: "'Inter', system-ui, sans-serif", padding: '12px 16px', gap: 10 }}>
-      {[180, 64, 0].map((h, i) => (
-        <div key={i} style={{ background: '#F4F4F5', borderRadius: 14, height: h || 'auto', flex: h ? 0 : 1 }} />
-      ))}
-    </div>
-  );
 
   return (
     <div style={{
@@ -454,11 +476,11 @@ export function InicioPage() {
       {/* ── KPI Cards ───────────────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
         {[
-          { label: 'Minhas tarefas hoje', icon: 'ti-checkbox',          bg: '#F0FDF4', color: '#16A34A', value: data?.cards.tasksToday.total ?? 0,    sub: `${data?.cards.tasksToday.completed ?? 0} concluídas`, onClick: () => navigate('/tarefas') },
-          { label: 'Tarefas atrasadas',   icon: 'ti-clock-exclamation', bg: '#FEF2F2', color: '#DC2626', value: data?.cards.tasksOverdue.total ?? 0,   sub: 'Precisam de atenção',  onClick: () => navigate('/tarefas') },
-          { label: 'Agenda hoje',         icon: 'ti-calendar',          bg: '#FFFBEB', color: '#D97706', value: data?.cards.agendaToday.total ?? 0,    sub: `${data?.cards.agendaToday.confirmed ?? 0} confirmados`, onClick: () => navigate('/agenda') },
-          { label: 'Leads em aberto',     icon: 'ti-layout-kanban',     bg: '#F5F3FF', color: '#7C3AED', value: data?.cards.openLeads.total ?? 0,      sub: 'No funil comercial',   onClick: () => navigate('/crm') },
-          { label: 'Anotações fixadas',   icon: 'ti-pin',               bg: '#EFF6FF', color: '#2563EB', value: data?.cards.pinnedNotes.total ?? 0,    sub: 'Post-its fixados',     onClick: undefined },
+          { label: 'Minhas tarefas hoje', icon: 'ti-checkbox',          bg: '#F0FDF4', color: '#16A34A', value: data ? data.cards.tasksToday.total    : '—', sub: data ? `${data.cards.tasksToday.completed} concluídas`    : '', onClick: () => navigate('/tarefas') },
+          { label: 'Tarefas atrasadas',   icon: 'ti-clock-exclamation', bg: '#FEF2F2', color: '#DC2626', value: data ? data.cards.tasksOverdue.total  : '—', sub: data ? 'Precisam de atenção'                              : '', onClick: () => navigate('/tarefas') },
+          { label: 'Agenda hoje',         icon: 'ti-calendar',          bg: '#FFFBEB', color: '#D97706', value: data ? data.cards.agendaToday.total   : '—', sub: data ? `${data.cards.agendaToday.confirmed} confirmados`  : '', onClick: () => navigate('/agenda') },
+          { label: 'Leads em aberto',     icon: 'ti-layout-kanban',     bg: '#F5F3FF', color: '#7C3AED', value: data ? data.cards.openLeads.total   : '—', sub: data ? 'No funil comercial' : '',  onClick: () => navigate('/crm') },
+          { label: 'Anotações fixadas',   icon: 'ti-pin',               bg: '#EFF6FF', color: '#2563EB', value: data ? data.cards.pinnedNotes.total : '—', sub: data ? 'Post-its fixados'   : '',  onClick: undefined },
         ].map(card => (
           <div key={card.label}
             onClick={card.onClick}
