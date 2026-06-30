@@ -1146,6 +1146,14 @@ export function AgendaPage() {
         {tall && <div style={{ fontSize:11, fontWeight:600, color:'#191C1D', lineHeight:1.3, marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.status==='bloqueado'?a.type:a.patient}</div>}
         {tall && h>=64 && <div style={{ fontSize:10, color:'#71717A', marginTop:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.type}</div>}
         {tall && h>=80 && <span style={{ display:'inline-block', marginTop:3, fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:99, background:st.border, color:st.text }}>{st.label}</span>}
+        {tall && h>=96 && a.notes && (
+          <div style={{ fontSize:10, color:'#374151', marginTop:4, lineHeight:1.4,
+            display:'-webkit-box', WebkitLineClamp: h>=120 ? 3 : 2,
+            WebkitBoxOrient:'vertical' as const, overflow:'hidden' }}>
+            <i className="ti ti-notes" style={{ fontSize:9, marginRight:3, color:'#9CA3AF' }} />
+            {a.notes}
+          </div>
+        )}
         {!tall && <div style={{ fontSize:10, color:'#374151', lineHeight:1.2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{a.status==='bloqueado'?a.type:a.patient}</div>}
         {a.isFromPackage && tall && h >= 48 && (
           <div style={{ position:'absolute', bottom:3, right:5, fontSize:8, fontWeight:700, padding:'1px 4px', borderRadius:3, background:'#7C3AED', color:'#FFF', lineHeight:1.4, letterSpacing:'.04em' }}>PKG</div>
