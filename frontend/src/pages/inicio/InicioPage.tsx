@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { homeApi, tasksApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 
@@ -135,7 +136,8 @@ function saveWeatherCache(w: Omit<WeatherCache, 'cachedAt'>) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function InicioPage() {
-  const { user }     = useAuth();
+  const { user }          = useAuth();
+  const { hasNoPermissions, isAdmin } = usePermissions();
   const navigate     = useNavigate();
   const qc           = useQueryClient();
   const { toast }    = useToast();
@@ -265,6 +267,20 @@ export function InicioPage() {
       height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden',
       fontFamily: "'Inter', system-ui, sans-serif", padding: '10px 14px', gap: 8,
     }}>
+
+      {/* ── No permissions banner ── */}
+      {hasNoPermissions && !isAdmin && (
+        <div style={{ flexShrink: 0, background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'flex-start', gap: 12, fontFamily: "'Inter', system-ui, sans-serif" }}>
+          <i className="ti ti-alert-triangle" style={{ fontSize: 20, color: '#D97706', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#92400E', marginBottom: 3 }}>Seu usuário não possui permissões configuradas</div>
+            <div style={{ fontSize: 13, color: '#78350F', lineHeight: 1.6 }}>
+              Você está logado, mas seu perfil de acesso não tem nenhuma permissão habilitada.<br />
+              Contate o administrador da clínica para vincular seu usuário a um perfil com as permissões corretas.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Animations ── */}
       <style>{`

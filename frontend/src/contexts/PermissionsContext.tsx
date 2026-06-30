@@ -6,6 +6,7 @@ interface PermissionsContextType {
   can: (module: string, action: string) => boolean;
   canView: (module: string) => boolean;
   isAdmin: boolean;
+  hasNoPermissions: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | null>(null);
@@ -16,12 +17,14 @@ const ALWAYS_CHECK: string[] = [];
 export function PermissionsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
-  const { permissions, isAdmin } = useMemo(() => {
-    if (!user) return { permissions: {} as PermissionMap, isAdmin: false };
+  const { permissions, isAdmin, hasNoPermissions } = useMemo(() => {
+    if (!user) return { permissions: {} as PermissionMap, isAdmin: false, hasNoPermissions: false };
 
     const isAdmin = user.role === 'ADMIN' || user.role === 'SUPER_ADMIN';
     const permissions: PermissionMap = (user.accessProfile?.permissions as PermissionMap) ?? {};
-    return { permissions, isAdmin };
+    // User has no usable permissions if: not admin, no profile linked OR profile has no view:true on any module
+    const hasNoPermissions = !isAdmin && Object.values(permissions).every(m => !m?.view);
+    return { permissions, isAdmin, hasNoPermissions };
   }, [user]);
 
   const can = useMemo(() => (module: string, action: string): boolean => {
@@ -38,7 +41,7 @@ export function PermissionsProvider({ children }: { children: ReactNode }) {
   const canView = useMemo(() => (module: string): boolean => can(module, 'view'), [can]);
 
   return (
-    <PermissionsContext.Provider value={{ permissions, can, canView, isAdmin }}>
+    <PermissionsContext.Provider value={{ permissions, can, canView, isAdmin, hasNoPermissions }}>
       {children}
     </PermissionsContext.Provider>
   );

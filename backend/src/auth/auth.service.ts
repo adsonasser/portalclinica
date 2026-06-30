@@ -14,7 +14,10 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email, active: true },
-      include: { clinic: { select: { id: true, name: true, logoUrl: true, emailConfirmed: true } } },
+      include: {
+        clinic:         { select: { id: true, name: true, logoUrl: true, emailConfirmed: true } },
+        accessProfile:  { select: { id: true, name: true, permissions: true, active: true } },
+      },
     });
 
     if (!user) throw new UnauthorizedException('Credenciais inválidas');
@@ -34,13 +37,15 @@ export class AuthService {
     return {
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatarUrl: user.avatarUrl,
-        clinic: user.clinic,
-        clinicId: user.clinicId,
+        id:              user.id,
+        name:            user.name,
+        email:           user.email,
+        role:            user.role,
+        avatarUrl:       user.avatarUrl,
+        clinic:          user.clinic,
+        clinicId:        user.clinicId,
+        accessProfileId: user.accessProfileId,
+        accessProfile:   user.accessProfile,
       },
     };
   }

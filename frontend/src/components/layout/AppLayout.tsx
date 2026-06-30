@@ -731,7 +731,7 @@ export function AppLayout() {
         paddingTop: 12, paddingBottom: 16, gap: 4,
       }}>
         <div style={{ flex: 1 }} />
-        {NAV.filter(item => isAdmin || canView(item.module)).map(navBtn)}
+        {NAV.filter(item => item.key === 'inicio' || isAdmin || canView(item.module)).map(navBtn)}
         <div style={{ flex: 1 }} />
         {(isAdmin || canView(SETTINGS.module)) && navBtn(SETTINGS)}
       </nav>

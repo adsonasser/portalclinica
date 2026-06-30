@@ -48,9 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const { token, user } = await authApi.login(email, password);
+    const { token } = await authApi.login(email, password);
     localStorage.setItem('token', token);
-    setUser(user);
+    // Always call /me after login to ensure accessProfile + permissions are loaded
+    const fullUser = await authApi.me();
+    setUser(fullUser);
   };
 
   const logout = () => {
