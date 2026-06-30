@@ -95,6 +95,58 @@ export class PatientsService {
     return { total, ativos, novos, emRisco };
   }
 
+  async importMany(clinicId: string, patients: any[]) {
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const row of patients) {
+      try {
+        const data: any = { clinicId, name: row.name?.trim() };
+        if (!data.name) { skipped++; continue; }
+
+        if (row.email)     data.email    = row.email.trim().toLowerCase();
+        if (row.phone)     data.phone    = row.phone.trim();
+        if (row.cpf)       data.cpf      = row.cpf.trim();
+        if (row.birthDate) {
+          const d = new Date(row.birthDate);
+          if (!isNaN(d.getTime())) data.birthDate = d;
+        }
+        if (row.gender)    data.gender   = row.gender.trim();
+        if (row.city)      data.city     = row.city.trim();
+        if (row.state)     data.state    = row.state.trim();
+        if (row.address)   data.address  = row.address.trim();
+        if (row.zipCode)   data.zipCode  = row.zipCode.trim();
+        if (row.notes)     data.notes    = row.notes.trim();
+        if (row.instagram) data.instagram = row.instagram.trim();
+        if (row.comoConheceu) data.comoConheceu = row.comoConheceu.trim();
+        if (row.responsible)  data.responsible  = row.responsible.trim();
+
+        // Skip if patient with same CPF or email already exists in this clinic
+        if (data.cpf || data.email) {
+          const exists = await this.prisma.patient.findFirst({
+            where: {
+              clinicId,
+              OR: [
+                ...(data.cpf   ? [{ cpf: data.cpf }]     : []),
+                ...(data.email ? [{ email: data.email }]  : []),
+              ],
+            },
+          });
+          if (exists) { skipped++; continue; }
+        }
+
+        await this.prisma.patient.create({ data });
+        imported++;
+      } catch {
+        errors.push(row.name ?? 'desconhecido');
+        skipped++;
+      }
+    }
+
+    return { imported, skipped, errors };
+  }
+
   private async findOneSimple(clinicId: string, id: string) {
     const p = await this.prisma.patient.findFirst({ where: { id, clinicId } });
     if (!p) throw new NotFoundException('Paciente não encontrado');

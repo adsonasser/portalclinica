@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/Toast';
 import { Portal } from '../../components/ui/Portal';
 import { SectionLoader } from '../../components/ui/Loader';
 import { calcPatientScore, scoreBadge } from '../../utils/patientScore';
+import { PatientImportModal } from '../../components/patients/PatientImportModal';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   ATIVO:         { bg: '#DCFCE7', color: '#16A34A', dot: '#22C55E', label: 'Ativo' },
@@ -34,6 +35,7 @@ export function PatientsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 25;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -232,6 +234,9 @@ export function PatientsPage() {
             )}
           </div>
 
+          <button onClick={() => setShowImport(true)} style={{ height: 38, padding: '0 16px', background: '#FFFFFF', border: '1px solid #000', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#000', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+            <i className="ti ti-file-import" style={{ fontSize: 15 }} /> Importar CSV
+          </button>
           <button onClick={openDrawer} style={{ height: 38, padding: '0 18px', background: '#000', border: 'none', borderRadius: 99, fontSize: 13, fontWeight: 600, color: '#FFF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', fontFamily: 'inherit' }}>
             <i className="ti ti-plus" style={{ fontSize: 15 }} /> Adicionar Novo Contato
           </button>
@@ -657,6 +662,8 @@ export function PatientsPage() {
           </>
         </Portal>
       )}
+
+      {showImport && <PatientImportModal onClose={() => setShowImport(false)} />}
     </>
   );
 }

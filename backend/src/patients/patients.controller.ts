@@ -28,6 +28,11 @@ export class PatientsController {
     return this.patientsService.create(clinicId, dto);
   }
 
+  @Post('import')
+  importMany(@ClinicId() clinicId: string, @Body() body: { patients: any[] }) {
+    return this.patientsService.importMany(clinicId, body.patients);
+  }
+
   @Patch(':id')
   update(@ClinicId() clinicId: string, @Param('id') id: string, @Body() dto: any) {
     return this.patientsService.update(clinicId, id, dto);

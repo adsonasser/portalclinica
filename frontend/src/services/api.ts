@@ -51,6 +51,7 @@ export const patientsApi = {
   create: (data: any) => api.post('/patients', data).then((r) => r.data),
   update: (id: string, data: any) => api.patch(`/patients/${id}`, data).then((r) => r.data),
   remove: (id: string) => api.delete(`/patients/${id}`).then((r) => r.data),
+  import: (patients: any[]) => api.post('/patients/import', { patients }).then((r) => r.data),
 };
 
 // ─── Plans ───────────────────────────────────────────────────────────────────
