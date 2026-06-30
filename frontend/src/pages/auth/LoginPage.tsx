@@ -278,7 +278,7 @@ export function LoginPage() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [pwFocused,    setPwFocused]    = useState(false);
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to="/home" replace />;
 
   const config = LOGIN_CONFIG;
 
