@@ -1797,20 +1797,29 @@ function parseCSVText(text: string) {
   return { headers: parseRow(lines[0]), rows: lines.slice(1).filter(l => l.trim()).map(parseRow) };
 }
 
+const BATCH_SIZE = 25;
+
 function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState<'upload'|'preview'|'done'>('upload');
+  const cancelRef = useRef(false);
+
+  const [step, setStep] = useState<'upload'|'preview'|'importing'|'done'>('upload');
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Record<string,string>>({});
-  const [result, setResult] = useState<{imported:number;skipped:number}|null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const importMut = useMutation({
-    mutationFn: (patients: any[]) => patientsApi.import(patients),
-    onSuccess: (data) => { setResult(data); setStep('done'); qc.invalidateQueries({ queryKey: ['patients'] }); qc.invalidateQueries({ queryKey: ['patients-stats'] }); },
-  });
+  // progress state
+  const [progress, setProgress] = useState({ done: 0, total: 0, imported: 0, skipped: 0 });
+  const [errors, setErrors] = useState<string[]>([]);
+  const [cancelled, setCancelled] = useState(false);
+
+  function reset() {
+    setStep('upload'); setHeaders([]); setRawRows([]); setMapping({});
+    setProgress({ done:0, total:0, imported:0, skipped:0 }); setErrors([]); setCancelled(false);
+    cancelRef.current = false;
+  }
 
   function processFile(file: File) {
     const reader = new FileReader();
@@ -1833,14 +1842,50 @@ function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
     }).filter(p => p.name?.trim());
   }
 
+  async function startImport() {
+    const all = buildPatients();
+    if (!all.length) return;
+    cancelRef.current = false;
+    setCancelled(false);
+    setErrors([]);
+    setProgress({ done:0, total:all.length, imported:0, skipped:0 });
+    setStep('importing');
+
+    let totalImported = 0;
+    let totalSkipped = 0;
+    const allErrors: string[] = [];
+
+    for (let i = 0; i < all.length; i += BATCH_SIZE) {
+      if (cancelRef.current) { setCancelled(true); break; }
+      const batch = all.slice(i, i + BATCH_SIZE);
+      try {
+        const res = await patientsApi.import(batch);
+        totalImported += res.imported ?? 0;
+        totalSkipped  += res.skipped  ?? 0;
+        if (res.errors?.length) allErrors.push(...res.errors);
+      } catch (err: any) {
+        const msg = err?.response?.data?.message ?? `Lote ${Math.floor(i/BATCH_SIZE)+1}: erro desconhecido`;
+        allErrors.push(msg);
+        totalSkipped += batch.length;
+      }
+      setProgress({ done: Math.min(i + BATCH_SIZE, all.length), total: all.length, imported: totalImported, skipped: totalSkipped });
+      setErrors([...allErrors]);
+    }
+
+    qc.invalidateQueries({ queryKey: ['patients'] });
+    qc.invalidateQueries({ queryKey: ['patients-stats'] });
+    setStep('done');
+  }
+
   const patients = step === 'preview' ? buildPatients() : [];
   const uniqueFields = [...new Set(Object.values(mapping).filter(Boolean))];
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   const inp: CSSProperties = { height:32, padding:'0 8px', border:'1px solid #E4E4E7', borderRadius:6, fontSize:12, color:'#09090B', background:'#FFF', cursor:'pointer', outline:'none', width:'100%', boxSizing:'border-box' as any, fontFamily:'inherit' };
 
   return (
     <SubView title="Importação de contatos" desc="Importe pacientes em lote a partir de um arquivo CSV." icon="ti-file-import" iconBg={mc.bg} iconColor={mc.color} parentLabel="Contatos" onBack={onBack}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
+      {/* ── Upload ── */}
       {step === 'upload' && (
         <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
           <div
@@ -1848,13 +1893,12 @@ function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
             onDragLeave={() => setDragOver(false)}
             onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) processFile(f); }}
             onClick={() => fileRef.current?.click()}
-            style={{ border:`2px dashed ${dragOver?'#000':'#D4D4D8'}`, borderRadius:12, padding:'52px 24px', textAlign:'center', cursor:'pointer', background: dragOver?'#F4F4F5':'#FAFAFA', transition:'all .15s' }}>
+            style={{ border:`2px dashed ${dragOver?'#000':'#D4D4D8'}`, borderRadius:12, padding:'52px 24px', textAlign:'center', cursor:'pointer', background:dragOver?'#F4F4F5':'#FAFAFA', transition:'all .15s' }}>
             <i className="ti ti-file-text" style={{ fontSize:36, color:'#A1A1AA', display:'block', marginBottom:12 }} />
             <div style={{ fontSize:14, fontWeight:600, color:'#09090B', marginBottom:4 }}>Arraste o arquivo CSV ou clique para selecionar</div>
             <div style={{ fontSize:12, color:'#71717A' }}>Suporta separadores vírgula (,) e ponto-e-vírgula (;) · UTF-8</div>
             <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display:'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); }} />
           </div>
-
           <div style={{ background:'#F4F4F5', borderRadius:10, padding:'14px 16px' }}>
             <div style={{ fontSize:12, fontWeight:600, color:'#09090B', marginBottom:8 }}>Colunas reconhecidas automaticamente</div>
             <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
@@ -1871,6 +1915,7 @@ function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
         </div>
       )}
 
+      {/* ── Preview + mapeamento ── */}
       {step === 'preview' && (
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div style={{ background:'#F4F4F5', borderRadius:10, padding:'14px 16px' }}>
@@ -1894,11 +1939,7 @@ function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
             </div>
             <div style={{ overflowX:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead>
-                  <tr style={{ background:'#F4F4F5' }}>
-                    {uniqueFields.map(f => <th key={f} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.05em', whiteSpace:'nowrap' }}>{CSV_FIELD_LABELS[f]??f}</th>)}
-                  </tr>
-                </thead>
+                <thead><tr style={{ background:'#F4F4F5' }}>{uniqueFields.map(f => <th key={f} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, fontWeight:600, color:'#71717A', textTransform:'uppercase', letterSpacing:'.05em', whiteSpace:'nowrap' }}>{CSV_FIELD_LABELS[f]??f}</th>)}</tr></thead>
                 <tbody>
                   {patients.slice(0,5).map((p,i) => (
                     <tr key={i} style={{ borderTop:'1px solid #F4F4F5' }}>
@@ -1912,38 +1953,123 @@ function ImportacaoView({ onBack, mc }: { onBack: () => void; mc: ModInfo }) {
 
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={() => { setStep('upload'); setHeaders([]); setRawRows([]); }} style={{ height:36, padding:'0 16px', border:'1px solid #E4E4E7', background:'#FFF', borderRadius:8, fontSize:13, color:'#71717A', cursor:'pointer', fontFamily:'inherit' }}>Voltar</button>
-            <button onClick={() => importMut.mutate(buildPatients())} disabled={importMut.isPending||patients.length===0}
+            <button onClick={startImport} disabled={patients.length===0}
               style={{ height:36, padding:'0 20px', background:'#000', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFF', cursor:patients.length===0?'not-allowed':'pointer', opacity:patients.length===0?.5:1, display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
-              {importMut.isPending
-                ? <><div style={{ width:14, height:14, border:'2px solid rgba(255,255,255,.3)', borderTopColor:'#fff', borderRadius:'50%', animation:'spin .75s linear infinite' }} /> Importando...</>
-                : <><i className="ti ti-upload" style={{ fontSize:14 }} /> Importar {patients.length} paciente(s)</>}
+              <i className="ti ti-upload" style={{ fontSize:14 }} /> Importar {patients.length} paciente(s)
             </button>
           </div>
         </div>
       )}
 
-      {step === 'done' && result && (
-        <div style={{ textAlign:'center', padding:'48px 0' }}>
-          <div style={{ width:64, height:64, borderRadius:'50%', background:'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-            <i className="ti ti-check" style={{ fontSize:28, color:'#16A34A' }} />
-          </div>
-          <div style={{ fontSize:20, fontWeight:700, color:'#09090B', marginBottom:6 }}>Importação concluída!</div>
-          <div style={{ fontSize:14, color:'#71717A', marginBottom:24 }}>Os pacientes já estão disponíveis no sistema.</div>
-          <div style={{ display:'inline-flex', gap:24, background:'#F4F4F5', borderRadius:12, padding:'16px 28px', marginBottom:24 }}>
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:28, fontWeight:700, color:'#16A34A' }}>{result.imported}</div>
-              <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>importados</div>
+      {/* ── Importando (progresso) ── */}
+      {step === 'importing' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+          <div style={{ background:'#FFF', border:'1px solid #E4E4E7', borderRadius:12, padding:'24px' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+              <div style={{ fontSize:14, fontWeight:600, color:'#09090B' }}>Importando pacientes...</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'#09090B' }}>{pct}%</div>
             </div>
-            <div style={{ width:1, background:'#E4E4E7' }} />
-            <div style={{ textAlign:'center' }}>
-              <div style={{ fontSize:28, fontWeight:700, color:'#71717A' }}>{result.skipped}</div>
-              <div style={{ fontSize:12, color:'#71717A', marginTop:2 }}>ignorados / duplicados</div>
+
+            {/* Barra de progresso */}
+            <div style={{ height:8, background:'#F4F4F5', borderRadius:99, overflow:'hidden', marginBottom:16 }}>
+              <div style={{ height:'100%', width:`${pct}%`, background:'#000', borderRadius:99, transition:'width .3s ease' }} />
+            </div>
+
+            <div style={{ fontSize:12, color:'#71717A', marginBottom:20 }}>
+              {progress.done} de {progress.total} pacientes processados
+            </div>
+
+            {/* Contadores */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:20 }}>
+              {[
+                { label:'Importados',  value: progress.imported, color:'#16A34A', bg:'#DCFCE7', icon:'ti-circle-check' },
+                { label:'Ignorados',   value: progress.skipped,  color:'#71717A', bg:'#F4F4F5', icon:'ti-circle-minus' },
+                { label:'Erros',       value: errors.length,     color:'#DC2626', bg:'#FEF2F2', icon:'ti-alert-circle' },
+              ].map(({ label, value, color, bg, icon }) => (
+                <div key={label} style={{ background:bg, borderRadius:10, padding:'12px 14px', textAlign:'center' }}>
+                  <i className={`ti ${icon}`} style={{ fontSize:18, color, display:'block', marginBottom:4 }} />
+                  <div style={{ fontSize:20, fontWeight:700, color, lineHeight:1.1 }}>{value}</div>
+                  <div style={{ fontSize:11, color, marginTop:2, opacity:.8 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => { cancelRef.current = true; }}
+              style={{ height:34, padding:'0 16px', border:'1px solid #E4E4E7', background:'#FFF', borderRadius:8, fontSize:12, color:'#71717A', cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:5 }}>
+              <i className="ti ti-x" style={{ fontSize:13 }} /> Cancelar importação
+            </button>
+          </div>
+
+          {/* Erros em tempo real */}
+          {errors.length > 0 && (
+            <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:600, color:'#DC2626', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+                <i className="ti ti-alert-triangle" style={{ fontSize:14 }} /> {errors.length} erro(s) encontrado(s)
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:160, overflowY:'auto' }}>
+                {errors.map((e, i) => (
+                  <div key={i} style={{ fontSize:11, color:'#B91C1C', display:'flex', gap:6, alignItems:'flex-start' }}>
+                    <span style={{ flexShrink:0 }}>•</span> {e}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Concluído ── */}
+      {step === 'done' && (
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ background:'#FFF', border:'1px solid #E4E4E7', borderRadius:12, padding:'28px 24px', textAlign:'center' }}>
+            <div style={{ width:56, height:56, borderRadius:'50%', background: cancelled?'#FFFBEB':'#DCFCE7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px' }}>
+              <i className={`ti ${cancelled?'ti-alert-triangle':'ti-check'}`} style={{ fontSize:24, color: cancelled?'#D97706':'#16A34A' }} />
+            </div>
+            <div style={{ fontSize:18, fontWeight:700, color:'#09090B', marginBottom:4 }}>
+              {cancelled ? 'Importação cancelada' : 'Importação concluída!'}
+            </div>
+            <div style={{ fontSize:13, color:'#71717A', marginBottom:20 }}>
+              {cancelled ? 'A importação foi interrompida. Parte dos dados pode ter sido salva.' : 'Os pacientes importados já estão disponíveis no sistema.'}
+            </div>
+
+            <div style={{ display:'inline-flex', gap:20, background:'#F4F4F5', borderRadius:12, padding:'14px 24px', marginBottom:20 }}>
+              {[
+                { label:'Importados',  value: progress.imported, color:'#16A34A' },
+                { label:'Ignorados',   value: progress.skipped,  color:'#71717A' },
+                { label:'Erros',       value: errors.length,     color: errors.length?'#DC2626':'#71717A' },
+              ].map(({ label, value, color }, i, arr) => (
+                <>
+                  <div key={label} style={{ textAlign:'center' }}>
+                    <div style={{ fontSize:24, fontWeight:700, color }}>{value}</div>
+                    <div style={{ fontSize:11, color:'#71717A', marginTop:2 }}>{label}</div>
+                  </div>
+                  {i < arr.length - 1 && <div style={{ width:1, background:'#E4E4E7' }} />}
+                </>
+              ))}
+            </div>
+
+            <div>
+              <button onClick={reset} style={{ height:36, padding:'0 20px', border:'1px solid #E4E4E7', background:'#FFF', borderRadius:8, fontSize:13, color:'#09090B', cursor:'pointer', fontFamily:'inherit' }}>
+                Importar outro arquivo
+              </button>
             </div>
           </div>
-          <br/>
-          <button onClick={() => { setStep('upload'); setResult(null); setHeaders([]); setRawRows([]); }} style={{ height:36, padding:'0 20px', border:'1px solid #E4E4E7', background:'#FFF', borderRadius:8, fontSize:13, color:'#09090B', cursor:'pointer', fontFamily:'inherit' }}>
-            Importar outro arquivo
-          </button>
+
+          {/* Lista de erros final */}
+          {errors.length > 0 && (
+            <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:10, padding:'14px 16px' }}>
+              <div style={{ fontSize:12, fontWeight:600, color:'#DC2626', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+                <i className="ti ti-alert-triangle" style={{ fontSize:14 }} /> Registros com erro ({errors.length})
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:200, overflowY:'auto' }}>
+                {errors.map((e, i) => (
+                  <div key={i} style={{ fontSize:11, color:'#B91C1C', display:'flex', gap:6, alignItems:'flex-start' }}>
+                    <span style={{ flexShrink:0 }}>•</span> {e}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </SubView>
