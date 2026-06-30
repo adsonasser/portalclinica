@@ -46,6 +46,11 @@ export class AdminController {
     return this.adminService.getClinicUsers(id);
   }
 
+  @Post('clinics/:id/users')
+  createClinicUser(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.createClinicUser(id, body);
+  }
+
   @Get('clinics/:id/metrics')
   getClinicMetrics(@Param('id') id: string) {
     return this.adminService.getClinicMetrics(id);

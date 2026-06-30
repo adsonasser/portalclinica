@@ -32,6 +32,9 @@ export function EmpresaDetailPage() {
   const [tab, setTab] = useState('Resumo');
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<any>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'ADMIN' });
+  const [userError, setUserError] = useState('');
 
   const { data: clinic, isLoading } = useQuery({
     queryKey: ['gerencial-clinic', id],
@@ -72,6 +75,20 @@ export function EmpresaDetailPage() {
   const statusMut = useMutation({
     mutationFn: (status: string) => adminApi.updateStatus(id!, status),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['gerencial-clinic', id] }); qc.invalidateQueries({ queryKey: ['gerencial-clinics'] }); },
+  });
+
+  const createUserMut = useMutation({
+    mutationFn: (data: any) => adminApi.createClinicUser(id!, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['gerencial-clinic-users', id] });
+      qc.invalidateQueries({ queryKey: ['gerencial-clinic', id] });
+      setShowUserModal(false);
+      setUserForm({ name: '', email: '', password: '', role: 'ADMIN' });
+      setUserError('');
+    },
+    onError: (err: any) => {
+      setUserError(err?.response?.data?.message || 'Erro ao criar usuário');
+    },
   });
 
   const impersonateMut = useMutation({
@@ -240,8 +257,11 @@ export function EmpresaDetailPage() {
           {/* ── Usuários ── */}
           {tab === 'Usuários' && (
             <div style={{ background:dark.surface, border:`1px solid ${dark.border}`, borderRadius:14, overflow:'hidden' }}>
-              <div style={{ padding:'14px 18px', borderBottom:`1px solid ${dark.border}` }}>
+              <div style={{ padding:'14px 18px', borderBottom:`1px solid ${dark.border}`, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div style={{ fontSize:13, fontWeight:600, color:dark.h2 }}>Usuários da empresa</div>
+                <button onClick={() => { setShowUserModal(true); setUserError(''); }} style={{ height:32, padding:'0 14px', background:'linear-gradient(135deg,#6366F1,#818CF8)', border:'none', borderRadius:8, fontSize:12, fontWeight:600, color:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' }}>
+                  <i className="ti ti-plus" style={{ fontSize:13 }} /> Criar usuário
+                </button>
               </div>
               <table style={{ width:'100%', borderCollapse:'collapse' }}>
                 <thead>
@@ -359,6 +379,69 @@ export function EmpresaDetailPage() {
           )}
         </div>
       </div>
+      {/* ── Modal criar usuário ── */}
+      {showUserModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.7)', zIndex:50, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={() => setShowUserModal(false)}>
+          <div style={{ background:'#111118', border:'1px solid #27272A', borderRadius:16, padding:28, width:420, fontFamily:"'Inter',system-ui,sans-serif" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+              <div style={{ fontSize:15, fontWeight:700, color:'#F4F4F5' }}>Criar usuário</div>
+              <button onClick={() => setShowUserModal(false)} style={{ border:'none', background:'none', color:'#71717A', cursor:'pointer', padding:4 }}>
+                <i className="ti ti-x" style={{ fontSize:16 }} />
+              </button>
+            </div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {[
+                { label:'Nome completo', key:'name', type:'text', placeholder:'Ex: Dr. João Silva' },
+                { label:'E-mail', key:'email', type:'email', placeholder:'email@clinica.com' },
+                { label:'Senha inicial', key:'password', type:'password', placeholder:'Mínimo 6 caracteres' },
+              ].map(({ label, key, type, placeholder }) => (
+                <div key={key}>
+                  <label style={{ fontSize:11, color:'#71717A', fontWeight:600, textTransform:'uppercase', letterSpacing:'.04em', display:'block', marginBottom:4 }}>{label}</label>
+                  <input
+                    type={type}
+                    placeholder={placeholder}
+                    value={(userForm as any)[key]}
+                    onChange={e => setUserForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width:'100%', height:38, padding:'0 10px', border:'1px solid #27272A', borderRadius:8, fontSize:13, color:'#E4E4E7', background:'#0D0D14', boxSizing:'border-box', outline:'none', fontFamily:'inherit' }}
+                  />
+                </div>
+              ))}
+
+              <div>
+                <label style={{ fontSize:11, color:'#71717A', fontWeight:600, textTransform:'uppercase', letterSpacing:'.04em', display:'block', marginBottom:4 }}>Perfil</label>
+                <select value={userForm.role} onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}
+                  style={{ width:'100%', height:38, padding:'0 10px', border:'1px solid #27272A', borderRadius:8, fontSize:13, color:'#E4E4E7', background:'#0D0D14', boxSizing:'border-box', outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
+                  <option value="ADMIN">Admin</option>
+                  <option value="PROFESSIONAL">Profissional</option>
+                  <option value="RECEPTIONIST">Recepcionista</option>
+                </select>
+              </div>
+
+              {userError && (
+                <div style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(220,38,38,.1)', border:'1px solid rgba(220,38,38,.25)', borderRadius:8, padding:'9px 12px', fontSize:12, color:'#F87171' }}>
+                  <i className="ti ti-alert-circle" style={{ fontSize:14, flexShrink:0 }} /> {userError}
+                </div>
+              )}
+
+              <div style={{ display:'flex', gap:8, marginTop:4 }}>
+                <button onClick={() => setShowUserModal(false)} style={{ flex:1, height:38, border:'1px solid #27272A', background:'transparent', borderRadius:8, fontSize:13, color:'#71717A', cursor:'pointer', fontFamily:'inherit' }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    if (!userForm.name || !userForm.email || !userForm.password) { setUserError('Preencha todos os campos'); return; }
+                    createUserMut.mutate(userForm);
+                  }}
+                  disabled={createUserMut.isPending}
+                  style={{ flex:1, height:38, background:'linear-gradient(135deg,#6366F1,#818CF8)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit', opacity: createUserMut.isPending ? .7 : 1 }}>
+                  {createUserMut.isPending ? 'Criando...' : 'Criar usuário'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

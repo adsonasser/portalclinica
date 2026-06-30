@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminService {
@@ -158,6 +159,26 @@ export class AdminService {
       where: { clinicId: id },
       select: { id: true, name: true, email: true, role: true, active: true, lastLoginAt: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createClinicUser(clinicId: string, data: { name: string; email: string; password: string; role?: string }) {
+    await this.findClinic(clinicId);
+
+    const existing = await this.prisma.user.findFirst({ where: { clinicId, email: data.email } });
+    if (existing) throw new ConflictException('Já existe um usuário com este e-mail nesta empresa');
+
+    const hashed = await bcrypt.hash(data.password, 10);
+    return this.prisma.user.create({
+      data: {
+        clinicId,
+        name: data.name,
+        email: data.email,
+        password: hashed,
+        role: (data.role as any) || 'ADMIN',
+        active: true,
+      },
+      select: { id: true, name: true, email: true, role: true, active: true, createdAt: true },
     });
   }
 
