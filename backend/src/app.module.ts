@@ -30,6 +30,8 @@ import { QuickRepliesModule } from './quick-replies/quick-replies.module';
 import { SettingsModule } from './settings/settings.module';
 import { HomeModule } from './home/home.module';
 import { RevenueIntelligenceModule } from './revenue-intelligence/revenue-intelligence.module';
+import { EmailModule } from './email/email.module';
+import { PublicModule } from './public/public.module';
 
 @Module({
   imports: [
@@ -64,6 +66,8 @@ import { RevenueIntelligenceModule } from './revenue-intelligence/revenue-intell
     SettingsModule,
     HomeModule,
     RevenueIntelligenceModule,
+    EmailModule,
+    PublicModule,
   ],
 })
 export class AppModule {}

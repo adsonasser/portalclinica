@@ -36,6 +36,8 @@ import { ContratosPage } from './pages/contratos/ContratosPage'
 import { ProntuarioPage } from './pages/prontuario/ProntuarioPage'
 import { InicioPage } from './pages/inicio/InicioPage'
 import { ReceitaInteligentePage } from './pages/receita-inteligente/ReceitaInteligentePage'
+import { CadastroPage } from './pages/public/CadastroPage'
+import { ConfirmarEmailPage } from './pages/public/ConfirmarEmailPage'
 
 function NoPermission() {
   return (
@@ -83,6 +85,10 @@ export default function App() {
           <Route path="auditoria"       element={<div style={{ padding:40, color:'#71717A', fontFamily:'Inter' }}>Em breve — Auditoria</div>} />
           <Route path="configuracoes"   element={<div style={{ padding:40, color:'#71717A', fontFamily:'Inter' }}>Em breve — Configurações</div>} />
         </Route>
+
+        {/* ── Public (unauthenticated) ── */}
+        <Route path="/cadastro"         element={<CadastroPage />} />
+        <Route path="/confirmar-email"  element={<ConfirmarEmailPage />} />
 
         {/* ── App ── */}
         <Route path="/login" element={<LoginPage />} />

@@ -2,7 +2,9 @@ import { Injectable, NotFoundException, ForbiddenException, ConflictException } 
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AdminService {
@@ -10,6 +12,7 @@ export class AdminService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private emailService: EmailService,
   ) {}
 
   // ─── Dashboard ──────────────────────────────────────────────────────────────
@@ -111,21 +114,66 @@ export class AdminService {
   }
 
   async createClinic(data: any) {
-    return this.prisma.clinic.create({
-      data: {
-        name: data.name,
-        slug: data.slug || data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-        email: data.email,
-        phone: data.phone,
-        cnpj: data.cnpj,
-        address: data.address,
-        cidade: data.cidade,
-        estado: data.estado,
-        responsavel: data.responsavel,
-        status: data.status || 'TESTE',
-        observacoes: data.observacoes,
-      },
+    if (!data.name || !data.email || !data.cnpj || !data.phone || !data.responsavel)
+      throw new ConflictException('Nome, e-mail, CNPJ, telefone e responsável são obrigatórios');
+
+    const cnpjClean = data.cnpj.replace(/\D/g, '');
+
+    const [existingCnpj, existingEmail] = await Promise.all([
+      this.prisma.clinic.findFirst({ where: { cnpj: cnpjClean } }),
+      this.prisma.user.findFirst({ where: { email: data.email.trim().toLowerCase() } }),
+    ]);
+    if (existingCnpj) throw new ConflictException('Já existe uma empresa cadastrada com este CNPJ');
+    if (existingEmail) throw new ConflictException('Este e-mail já está vinculado a outro usuário no sistema');
+
+    const tempPassword = crypto.randomBytes(5).toString('hex'); // 10 chars hex
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const slug = data.slug || data.name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
+
+    const clinic = await this.prisma.$transaction(async (tx) => {
+      const c = await tx.clinic.create({
+        data: {
+          name: data.name,
+          slug,
+          email: data.email.trim().toLowerCase(),
+          phone: data.phone,
+          cnpj: cnpjClean,
+          responsavel: data.responsavel,
+          cep: data.cep,
+          street: data.street,
+          addressNumber: data.addressNumber,
+          complement: data.complement,
+          neighborhood: data.neighborhood,
+          cidade: data.cidade,
+          estado: data.estado,
+          status: data.status || 'TESTE',
+          observacoes: data.observacoes,
+          emailConfirmed: true,
+          active: true,
+        },
+      });
+
+      await tx.user.create({
+        data: {
+          clinicId: c.id,
+          name: data.responsavel,
+          email: data.email.trim().toLowerCase(),
+          password: passwordHash,
+          role: 'ADMIN',
+          active: true,
+          mustChangePassword: true,
+        },
+      });
+
+      return c;
     });
+
+    // Try to send welcome email (non-blocking)
+    try {
+      await this.emailService.sendWelcomeWithPassword(data.email, data.responsavel, data.name, tempPassword);
+    } catch { /* SMTP not configured — password returned in response */ }
+
+    return { ...clinic, tempPassword };
   }
 
   async updateClinic(id: string, data: any) {

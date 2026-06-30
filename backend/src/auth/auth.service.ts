@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -14,13 +14,18 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email, active: true },
-      include: { clinic: { select: { id: true, name: true, logoUrl: true } } },
+      include: { clinic: { select: { id: true, name: true, logoUrl: true, emailConfirmed: true } } },
     });
 
     if (!user) throw new UnauthorizedException('Credenciais inválidas');
 
     const valid = await bcrypt.compare(dto.password, user.password);
     if (!valid) throw new UnauthorizedException('Credenciais inválidas');
+
+    // Block login if clinic email not confirmed
+    if (user.clinic && !(user.clinic as any).emailConfirmed) {
+      throw new ForbiddenException('PENDING_EMAIL_CONFIRMATION');
+    }
 
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 

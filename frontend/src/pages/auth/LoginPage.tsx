@@ -273,6 +273,9 @@ export function LoginPage() {
   const [remember,     setRemember]     = useState(false);
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState('');
+  const [pendingEmail, setPendingEmail] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendDone,   setResendDone]   = useState(false);
   const [emailErr,     setEmailErr]     = useState('');
   const [pwErr,        setPwErr]        = useState('');
   const [emailFocused, setEmailFocused] = useState(false);
@@ -301,13 +304,33 @@ export function LoginPage() {
     if (eErr || pErr) return;
 
     setError('');
+    setPendingEmail(false);
     setLoading(true);
     try {
       await login(email, password);
-    } catch {
-      setError('E-mail ou senha incorretos. Verifique seus dados e tente novamente.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? '';
+      if (msg === 'PENDING_EMAIL_CONFIRMATION') {
+        setPendingEmail(true);
+      } else {
+        setError('E-mail ou senha incorretos. Verifique seus dados e tente novamente.');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setResendLoading(true);
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3002'}/public/resend-confirmation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      setResendDone(true);
+    } catch { /* ignore */ } finally {
+      setResendLoading(false);
     }
   };
 
@@ -470,6 +493,31 @@ export function LoginPage() {
                     Esqueceu a senha?
                   </button>
                 </div>
+
+                {/* Pending email confirmation */}
+                {pendingEmail && (
+                  <div style={{
+                    background: '#FFFBEB', border: '1px solid #FDE68A',
+                    borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 13,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#92400E', fontWeight: 600, marginBottom: 6 }}>
+                      <i className="ti ti-mail" style={{ fontSize: 16 }} />
+                      Confirme seu e-mail para continuar
+                    </div>
+                    <p style={{ color: '#78350F', margin: '0 0 10px', lineHeight: 1.5 }}>
+                      Enviamos um link de confirmação para <strong>{email}</strong>. Verifique sua caixa de entrada (e spam).
+                    </p>
+                    {resendDone ? (
+                      <div style={{ color: '#16A34A', fontSize: 12, fontWeight: 500 }}>
+                        <i className="ti ti-check" style={{ marginRight: 4 }} /> Novo e-mail enviado!
+                      </div>
+                    ) : (
+                      <button onClick={handleResend} disabled={resendLoading} style={{ fontSize: 12, fontWeight: 600, color: '#92400E', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', fontFamily: 'inherit' }}>
+                        {resendLoading ? 'Enviando...' : 'Reenviar e-mail de confirmação'}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* General error */}
                 {error && (

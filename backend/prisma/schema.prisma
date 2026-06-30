@@ -150,23 +150,29 @@ enum TenantSubStatus {
 // ─── MODELS ───────────────────────────────────────────────────────────────────
 
 model Clinic {
-  id          String        @id @default(cuid())
-  name        String
-  slug        String        @unique
-  cnpj        String?
-  phone       String?
-  email       String?
-  address     String?
-  logoUrl     String?
-  active      Boolean       @default(true)
-  status      ClinicStatus  @default(ATIVA)
-  responsavel String?
-  cidade      String?
-  estado      String?
-  dominio     String?
-  observacoes String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  name           String
+  slug           String        @unique
+  cnpj           String?
+  phone          String?
+  email          String?
+  address        String?
+  logoUrl        String?
+  active         Boolean       @default(true)
+  status         ClinicStatus  @default(ATIVA)
+  responsavel    String?
+  cidade         String?
+  estado         String?
+  dominio        String?
+  observacoes    String?
+  cep            String?
+  street         String?
+  addressNumber  String?
+  complement     String?
+  neighborhood   String?
+  emailConfirmed Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   users               User[]
   accessProfiles      AccessProfile[]
@@ -202,13 +208,27 @@ model Clinic {
   integrations        Integration[]
   conversations       Conversation[]
   chatMessages        ChatMessage[]
-  quickReplies        QuickReply[]
-  leadSources           LeadSource[]
-  leadLossReasons       LeadLossReason[]
-  postIts               PostIt[]
-  financialRecurrences  FinancialRecurrence[]
+  quickReplies             QuickReply[]
+  leadSources              LeadSource[]
+  leadLossReasons          LeadLossReason[]
+  postIts                  PostIt[]
+  financialRecurrences     FinancialRecurrence[]
+  emailConfirmationTokens  EmailConfirmationToken[]
 
   @@map("clinics")
+}
+
+model EmailConfirmationToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  clinicId  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  clinic Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@map("email_confirmation_tokens")
 }
 
 model ClinicSettings {
@@ -244,19 +264,20 @@ model AccessProfile {
 }
 
 model User {
-  id                String   @id @default(cuid())
-  clinicId          String
-  name              String
-  email             String
-  password          String
-  role              UserRole @default(RECEPTIONIST)
-  avatarUrl         String?
-  phone             String?
-  active            Boolean  @default(true)
-  accessProfileId   String?
-  lastLoginAt       DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  clinicId            String
+  name                String
+  email               String
+  password            String
+  role                UserRole @default(RECEPTIONIST)
+  avatarUrl           String?
+  phone               String?
+  active              Boolean  @default(true)
+  accessProfileId     String?
+  mustChangePassword  Boolean  @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   clinic          Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   accessProfile   AccessProfile?  @relation(fields: [accessProfileId], references: [id])

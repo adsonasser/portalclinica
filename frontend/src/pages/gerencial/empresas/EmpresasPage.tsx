@@ -18,25 +18,52 @@ const dark = { h1: '#F4F4F5', h2: '#E4E4E7', muted: '#71717A', border: 'rgba(255
 
 const STATUS_OPTIONS = ['ATIVA','TESTE','IMPLANTACAO','SUSPENSA','BLOQUEADA','INADIMPLENTE','CANCELADA'];
 
+const EMPTY_NOVA = { name:'', email:'', phone:'', cnpj:'', responsavel:'', status:'TESTE', observacoes:'', cep:'', street:'', addressNumber:'', complement:'', neighborhood:'', cidade:'', estado:'' };
+
 function NovaEmpresaPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name:'', email:'', phone:'', cnpj:'', responsavel:'', cidade:'', estado:'', status:'TESTE', observacoes:'' });
+  const [form, setForm] = useState(EMPTY_NOVA);
   const [error, setError] = useState('');
+  const [cepLoading, setCepLoading] = useState(false);
+  const [tempPassword, setTempPassword] = useState('');
+  const [done, setDone] = useState(false);
 
   const inp: React.CSSProperties = { width:'100%', height:38, padding:'0 10px', border:'1px solid #27272A', borderRadius:8, fontSize:13, color:'#E4E4E7', background:'#111118', boxSizing:'border-box', fontFamily:'inherit', outline:'none' };
-  const lbl: React.CSSProperties = { fontSize:12, fontWeight:500, color:'#71717A', display:'block', marginBottom:4 };
+  const lbl: React.CSSProperties = { fontSize:11, fontWeight:600, color:'#71717A', display:'block', marginBottom:4, textTransform:'uppercase', letterSpacing:'.04em' };
+  const req = <span style={{ color:'#F87171' }}> *</span>;
 
   const mut = useMutation({
     mutationFn: adminApi.createClinic,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['gerencial-clinics'] }); qc.invalidateQueries({ queryKey: ['gerencial-dashboard'] }); onSaved(); onClose(); },
-    onError: () => setError('Erro ao criar empresa. Verifique os dados.'),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['gerencial-clinics'] });
+      qc.invalidateQueries({ queryKey: ['gerencial-dashboard'] });
+      onSaved();
+      setTempPassword(data.tempPassword ?? '');
+      setDone(true);
+    },
+    onError: (err: any) => setError(err?.response?.data?.message ?? 'Erro ao criar empresa. Verifique os dados.'),
   });
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
+  async function fetchCep(cep: string) {
+    const clean = cep.replace(/\D/g, '');
+    if (clean.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setForm(f => ({ ...f, street: data.logradouro ?? f.street, neighborhood: data.bairro ?? f.neighborhood, cidade: data.localidade ?? f.cidade, estado: data.uf ?? f.estado }));
+      }
+    } catch { /* allow manual fill */ } finally { setCepLoading(false); }
+  }
+
   function handleSave() {
-    if (!form.name) { setError('Nome é obrigatório.'); return; }
+    const required = ['name','email','phone','cnpj','responsavel','cep','street','cidade','estado'];
+    const missing = required.filter(k => !(form as any)[k]?.trim());
+    if (missing.length) { setError('Preencha todos os campos obrigatórios (marcados com *).'); return; }
     setError('');
     mut.mutate(form);
   }
@@ -44,12 +71,14 @@ function NovaEmpresaPanel({ onClose, onSaved }: { onClose: () => void; onSaved: 
   return (
     <>
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:9000, backdropFilter:'blur(4px)' }} />
-      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:500, background:'#111118', zIndex:9001, boxShadow:'-4px 0 40px rgba(0,0,0,.6)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", borderLeft:'1px solid rgba(99,102,241,.2)', animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
-        <style>{`@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+      <div style={{ position:'fixed', top:0, right:0, bottom:0, width:520, background:'#111118', zIndex:9001, boxShadow:'-4px 0 40px rgba(0,0,0,.6)', display:'flex', flexDirection:'column', fontFamily:"'Inter', system-ui, sans-serif", borderLeft:'1px solid rgba(99,102,241,.2)', animation:'slideIn .22s cubic-bezier(0.32,0.72,0,1)', overflow:'hidden' }}>
+        <style>{`@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } } @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }`}</style>
+
+        {/* Header */}
         <div style={{ flexShrink:0, padding:'20px 24px', borderBottom:'1px solid rgba(255,255,255,.07)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
           <div>
             <div style={{ fontSize:15, fontWeight:700, color:'#E4E4E7' }}>Nova empresa</div>
-            <div style={{ fontSize:11, color:'#71717A', marginTop:1 }}>Cadastrar nova empresa no SaaS</div>
+            <div style={{ fontSize:11, color:'#71717A', marginTop:1 }}>Cadastrar empresa + administrador automaticamente</div>
           </div>
           <button onClick={onClose} style={{ width:28, height:28, border:'none', background:'rgba(255,255,255,.06)', borderRadius:'50%', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#71717A' }}>
             <i className="ti ti-x" style={{ fontSize:13 }} />
@@ -57,37 +86,104 @@ function NovaEmpresaPanel({ onClose, onSaved }: { onClose: () => void; onSaved: 
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
-          <div><label style={lbl}>Nome da empresa <span style={{ color:'#F87171' }}>*</span></label><input value={form.name} onChange={set('name')} placeholder="Clínica Exemplo Ltda" style={inp} /></div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div><label style={lbl}>E-mail</label><input value={form.email} onChange={set('email')} placeholder="contato@empresa.com" type="email" style={inp} /></div>
-            <div><label style={lbl}>Telefone</label><input value={form.phone} onChange={set('phone')} placeholder="(62) 9 9999-9999" style={inp} /></div>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div><label style={lbl}>CNPJ</label><input value={form.cnpj} onChange={set('cnpj')} placeholder="00.000.000/0001-00" style={inp} /></div>
-            <div><label style={lbl}>Status inicial</label>
-              <select value={form.status} onChange={set('status')} style={{ ...inp, cursor:'pointer' }}>
-                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_CFG[s]?.label ?? s}</option>)}
-              </select>
+
+          {/* ── Sucesso ── */}
+          {done ? (
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', textAlign:'center', padding:'32px 0', gap:16 }}>
+              <div style={{ width:56, height:56, borderRadius:'50%', background:'rgba(22,163,74,.15)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <i className="ti ti-circle-check" style={{ fontSize:28, color:'#4ADE80' }} />
+              </div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#E4E4E7' }}>Empresa criada com sucesso!</div>
+              <div style={{ fontSize:13, color:'#71717A', lineHeight:1.6 }}>
+                O usuário administrador foi criado automaticamente com o e-mail informado.
+              </div>
+              {tempPassword && (
+                <div style={{ background:'rgba(99,102,241,.1)', border:'1px solid rgba(99,102,241,.3)', borderRadius:12, padding:'16px 20px', width:'100%', textAlign:'left' }}>
+                  <div style={{ fontSize:11, fontWeight:600, color:'#818CF8', marginBottom:8, textTransform:'uppercase', letterSpacing:'.05em' }}>
+                    <i className="ti ti-key" style={{ fontSize:12, marginRight:4 }} /> Senha provisória gerada
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <code style={{ fontSize:18, fontWeight:700, color:'#E4E4E7', letterSpacing:'.1em', flex:1 }}>{tempPassword}</code>
+                    <button onClick={() => navigator.clipboard.writeText(tempPassword)}
+                      style={{ border:'none', background:'rgba(255,255,255,.08)', borderRadius:6, cursor:'pointer', color:'#71717A', padding:'6px 10px', fontSize:11, fontFamily:'inherit', display:'flex', alignItems:'center', gap:4 }}>
+                      <i className="ti ti-copy" style={{ fontSize:13 }} /> Copiar
+                    </button>
+                  </div>
+                  <div style={{ fontSize:11, color:'#71717A', marginTop:8 }}>
+                    Envie esta senha ao cliente. Ele será solicitado a trocar no primeiro acesso.
+                    {' '}E-mail de boas-vindas enviado para <strong style={{ color:'#A1A1AA' }}>{form.email}</strong> (se SMTP configurado).
+                  </div>
+                </div>
+              )}
+              <button onClick={onClose} style={{ marginTop:8, height:38, padding:'0 24px', background:'linear-gradient(135deg,#6366F1,#818CF8)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#fff', cursor:'pointer', fontFamily:'inherit' }}>
+                Fechar
+              </button>
             </div>
-          </div>
-          <div><label style={lbl}>Responsável</label><input value={form.responsavel} onChange={set('responsavel')} placeholder="Nome do responsável" style={inp} /></div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div><label style={lbl}>Cidade</label><input value={form.cidade} onChange={set('cidade')} placeholder="Goiânia" style={inp} /></div>
-            <div><label style={lbl}>Estado</label><input value={form.estado} onChange={set('estado')} placeholder="GO" style={inp} /></div>
-          </div>
-          <div><label style={lbl}>Observações internas</label>
-            <textarea value={form.observacoes} onChange={set('observacoes')} rows={3} placeholder="Notas para o time interno..." style={{ ...inp, height:'auto', padding:'8px 10px', resize:'vertical' }} />
-          </div>
-          {error && <div style={{ padding:'10px 12px', background:'rgba(239,68,68,.1)', border:'1px solid rgba(239,68,68,.25)', borderRadius:8, fontSize:12, color:'#F87171' }}>{error}</div>}
+          ) : (
+            <>
+              {/* Dados da empresa */}
+              <div style={{ fontSize:11, fontWeight:700, color:'#6366F1', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:-4 }}>Dados da empresa</div>
+
+              <div><label style={lbl}>Nome da empresa{req}</label><input value={form.name} onChange={set('name')} placeholder="Clínica Exemplo Ltda" style={inp} /></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div><label style={lbl}>CNPJ{req}</label><input value={form.cnpj} onChange={set('cnpj')} placeholder="00.000.000/0001-00" style={inp} /></div>
+                <div><label style={lbl}>Telefone{req}</label><input value={form.phone} onChange={set('phone')} placeholder="(62) 9 9999-9999" style={inp} /></div>
+              </div>
+              <div><label style={lbl}>E-mail (será o login do admin){req}</label><input value={form.email} onChange={set('email')} placeholder="contato@empresa.com" type="email" style={inp} /></div>
+              <div><label style={lbl}>Nome do responsável{req}</label><input value={form.responsavel} onChange={set('responsavel')} placeholder="Dr. João Silva" style={inp} /></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <div><label style={lbl}>Status inicial</label>
+                  <select value={form.status} onChange={set('status')} style={{ ...inp, cursor:'pointer' }}>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_CFG[s]?.label ?? s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Endereço */}
+              <div style={{ fontSize:11, fontWeight:700, color:'#6366F1', textTransform:'uppercase', letterSpacing:'.06em', marginTop:4, marginBottom:-4 }}>Endereço</div>
+
+              <div>
+                <label style={lbl}>CEP{req}</label>
+                <div style={{ position:'relative' }}>
+                  <input value={form.cep} onChange={e => { set('cep')(e); if (e.target.value.replace(/\D/g,'').length === 8) fetchCep(e.target.value); }} placeholder="00000-000" maxLength={9} style={{ ...inp, paddingRight:36 }} />
+                  {cepLoading && <div style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', width:14, height:14, border:'2px solid rgba(99,102,241,.3)', borderTopColor:'#818CF8', borderRadius:'50%', animation:'spin .75s linear infinite' }} />}
+                </div>
+              </div>
+              <div><label style={lbl}>Rua / Logradouro{req}</label><input value={form.street} onChange={set('street')} placeholder="Rua das Flores" style={inp} /></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:12 }}>
+                <div><label style={lbl}>Número</label><input value={form.addressNumber} onChange={set('addressNumber')} placeholder="123" style={inp} /></div>
+                <div><label style={lbl}>Complemento</label><input value={form.complement} onChange={set('complement')} placeholder="Sala 4" style={inp} /></div>
+              </div>
+              <div><label style={lbl}>Bairro</label><input value={form.neighborhood} onChange={set('neighborhood')} placeholder="Centro" style={inp} /></div>
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:12 }}>
+                <div><label style={lbl}>Cidade{req}</label><input value={form.cidade} onChange={set('cidade')} placeholder="Goiânia" style={inp} /></div>
+                <div><label style={lbl}>UF{req}</label><input value={form.estado} onChange={set('estado')} placeholder="GO" maxLength={2} style={inp} /></div>
+              </div>
+              <div><label style={lbl}>Observações internas</label>
+                <textarea value={form.observacoes} onChange={set('observacoes')} rows={2} placeholder="Notas para o time..." style={{ ...inp, height:'auto', padding:'8px 10px', resize:'vertical' }} />
+              </div>
+
+              <div style={{ background:'rgba(99,102,241,.07)', border:'1px solid rgba(99,102,241,.2)', borderRadius:8, padding:'10px 12px', fontSize:12, color:'#818CF8', display:'flex', gap:7, alignItems:'flex-start' }}>
+                <i className="ti ti-info-circle" style={{ fontSize:14, flexShrink:0, marginTop:1 }} />
+                Uma senha provisória será gerada automaticamente. O administrador deve trocá-la no primeiro acesso.
+              </div>
+
+              {error && <div style={{ padding:'10px 12px', background:'rgba(239,68,68,.1)', border:'1px solid rgba(239,68,68,.25)', borderRadius:8, fontSize:12, color:'#F87171', display:'flex', gap:7, alignItems:'flex-start' }}>
+                <i className="ti ti-alert-circle" style={{ fontSize:14, flexShrink:0, marginTop:1 }} />{error}
+              </div>}
+            </>
+          )}
         </div>
 
-        <div style={{ flexShrink:0, padding:'14px 24px', borderTop:'1px solid rgba(255,255,255,.07)', display:'flex', gap:10, background:'rgba(255,255,255,.02)' }}>
-          <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid rgba(255,255,255,.1)', background:'transparent', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
-          <button onClick={handleSave} disabled={mut.isPending} style={{ flex:2, height:40, background:mut.isPending ? '#3730A3' : 'linear-gradient(135deg, #6366F1, #818CF8)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-            <i className="ti ti-building-plus" style={{ fontSize:14 }} />
-            {mut.isPending ? 'Criando...' : 'Criar empresa'}
-          </button>
-        </div>
+        {!done && (
+          <div style={{ flexShrink:0, padding:'14px 24px', borderTop:'1px solid rgba(255,255,255,.07)', display:'flex', gap:10, background:'rgba(255,255,255,.02)' }}>
+            <button onClick={onClose} style={{ flex:1, height:40, border:'1px solid rgba(255,255,255,.1)', background:'transparent', borderRadius:8, fontSize:13, fontWeight:500, color:'#71717A', cursor:'pointer', fontFamily:'inherit' }}>Cancelar</button>
+            <button onClick={handleSave} disabled={mut.isPending} style={{ flex:2, height:40, background:mut.isPending ? '#3730A3' : 'linear-gradient(135deg, #6366F1, #818CF8)', border:'none', borderRadius:8, fontSize:13, fontWeight:600, color:'#FFFFFF', cursor:mut.isPending?'not-allowed':'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+              <i className="ti ti-building-plus" style={{ fontSize:14 }} />
+              {mut.isPending ? 'Criando...' : 'Criar empresa'}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
