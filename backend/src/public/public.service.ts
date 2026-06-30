@@ -1,6 +1,7 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { seedClinicDefaults } from '../common/clinic-seed';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -84,6 +85,9 @@ export class PublicService {
 
       return clinic;
     });
+
+    // Seed defaults (non-blocking — clinic is inactive, but defaults are ready for when confirmed)
+    try { await seedClinicDefaults(this.prisma, result.id); } catch { /* best effort */ }
 
     const baseUrl = this.config.get('APP_URL') ?? 'https://nassclin.com.br';
     await this.email.sendConfirmationEmail(data.email, data.responsavel, token, baseUrl);

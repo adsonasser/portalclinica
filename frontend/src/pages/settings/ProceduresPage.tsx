@@ -270,10 +270,10 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
     [categoriesData]
   );
 
-  // Auto-select "Receita com Venda" on new procedures when categories load
+  // Auto-select "Receita com Venda" only if editing and no category selected yet
   useEffect(() => {
-    if (!isEdit && !defaultCategoryId && incomeCategories.length > 0) {
-      const dflt = incomeCategories.find((c: any) => c.name === 'Receita com Venda') || incomeCategories[0];
+    if (isEdit && !defaultCategoryId && incomeCategories.length > 0) {
+      const dflt = incomeCategories.find((c: any) => c.name === 'Receita com Venda');
       if (dflt) setDefaultCategoryId(dflt.id);
     }
   }, [incomeCategories, isEdit, defaultCategoryId]);
@@ -328,7 +328,6 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
     if (!categoria)           { setError('Categoria é obrigatória.'); return; }
     if (!tipo)                { setError('Tipo é obrigatório.'); return; }
     if (!valorPadrao)         { setError('Valor padrão é obrigatório.'); return; }
-    if (!defaultCategoryId)   { setError('Conta DRE é obrigatória.'); return; }
     if (tipoSessoes === 'multipla' && (!qtdSessoes || Number(qtdSessoes) < 1)) {
       setError('Quantidade de sessões deve ser maior que zero.'); return;
     }
@@ -503,23 +502,16 @@ function ProcedureModal({ plan, onClose, categories, types, allPlans }: ModalPro
               </div>
               <div style={{ gridColumn: '1/-1' }}>
                 <label style={lbl}>
-                  Conta DRE / Conta financeira padrão <span style={{ color: '#DC2626' }}>*</span>
+                  Conta DRE / Conta financeira padrão <span style={{ fontSize: 11, color: '#A1A1AA', fontWeight: 400 }}>(opcional)</span>
                 </label>
-                {incomeCategories.length === 0 ? (
-                  <div style={{ padding: '9px 12px', border: '1px solid #FEF08A', borderRadius: 9, background: '#FEFCE8', fontSize: 12, color: '#854D0E' }}>
-                    Nenhuma conta de receita cadastrada.{' '}
-                    <strong>Financeiro &gt; Contas financeiras / DRE</strong> para criar.
-                  </div>
-                ) : (
-                  <select value={defaultCategoryId} onChange={e => setDefaultCategoryId(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
-                    <option value="">Selecionar conta DRE</option>
-                    {incomeCategories.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+                <select value={defaultCategoryId} onChange={e => setDefaultCategoryId(e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+                  <option value="">Sem vínculo DRE — classificar depois</option>
+                  {incomeCategories.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
                 <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 5, margin: '5px 0 0' }}>
-                  Esta conta será usada automaticamente ao lançar uma venda com este procedimento.
+                  Opcional. Se não vincular, o item aparecerá como "Sem categoria DRE" nos relatórios.
                 </p>
               </div>
               <div style={{ gridColumn: '1/-1' }}>

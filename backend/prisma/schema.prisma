@@ -802,6 +802,7 @@ model PaymentMethod {
   id        String   @id @default(cuid())
   clinicId  String
   name      String
+  type      String?  @default("outro")
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 

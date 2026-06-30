@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import { seedClinicDefaults } from '../common/clinic-seed';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
@@ -167,6 +168,9 @@ export class AdminService {
 
       return c;
     });
+
+    // Seed default payment methods + CRM defaults (non-blocking)
+    try { await seedClinicDefaults(this.prisma, clinic.id); } catch { /* best effort */ }
 
     // Try to send welcome email (non-blocking)
     try {
